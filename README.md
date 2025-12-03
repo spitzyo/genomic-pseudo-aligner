@@ -82,3 +82,11 @@ python3 main.py -t dumpalign \
   --reads s_example_k150_n10k.fq \
   --coverage
 ```
+
+## 🛠️ Development & Testing
+To run the comprehensive test suite, install dependencies and run pytest:
+
+```bash
+pip install -r requirements.txt
+python3 -m pytest
+```
