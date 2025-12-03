@@ -1,4 +1,6 @@
-# genomic-pseudo-aligner: a Python bioinformatics tool for genomic pseudo-alignment, variant calling (SNPs), and coverage analysis.
+# Genomic Pseudo-Aligner
+
+A Python bioinformatics tool for genomic pseudo-alignment, variant calling (SNPs), and coverage analysis.
 
 ## 🚀 Features
 
@@ -9,34 +11,33 @@
 
 ## 🛠️ System Architecture
 
-The project is modularized into the following components:
-
 | Module | Description |
 | :--- | :--- |
 | `aligner.py` | Core class that manages the alignment process and accumulates status (unique/ambiguous/unmapped). |
 | `kmers.py` | Handles `Reference` genomes and the `KmerCollection` index. |
 | `extcoverage.py` | Calculates coverage depth and statistics for mapped positions. |
 | `extvartrack.py` | Tracks base changes to identify variants based on quality and coverage thresholds. |
-| main.py | The main script that handles command-line arguments and delegates work to the other modules. |
+| `main.py` | The main script that handles command-line arguments and delegates work to the other modules. |
 
 ## 📊 Algorithm Design
 
 The pipeline follows a structured flow from reference indexing to variant detection:
 
 ![Flowchart of the Aligner](assets/flowchart.png)
-*(Flow: Reference Processing -> Read Processing -> Mapping -> Extensions)*
 
 ## 🧬 Variant Detection (SNP)
 
 The tool detects Single Nucleotide Polymorphisms (SNPs) by comparing aligned reads to the reference. It looks for positions where the read base differs from the reference, provided the quality score and coverage meet the thresholds.
 
-For example -
+For example:
 
+```text
 Reference Genome:  ... A  T  C  G  [T]  A  G  C ...
                        |  |  |  |   X   |  |  |
 Aligned Read:      ... A  T  C  G  [A]  A  G  C ...
-                                     ^
+                                    ^
                                SNP Detected
+```
 
 ## 💡 Key Design and Coding Decisions
 
@@ -50,15 +51,18 @@ Aligned Read:      ... A  T  C  G  [A]  A  G  C ...
 ### 1. Basic Alignment
 Align reads to a reference genome and save the result to an `.aln` file.
 
+```bash
 python3 main.py -t align \
   -g example_ref_mid.fa \
   -k 12 \
   -a output.aln \
   --reads s_example_k150_n10k.fq
+```
 
 ### 2. Alignment with Quality Filtering & Variant Detection
 Run the pipeline with specific quality thresholds and enable the variant tracker.
 
+```bash
 python3 main.py -t dumpalign \
   -g reference_for_vartrack.fa \
   -k 5 \
@@ -66,12 +70,15 @@ python3 main.py -t dumpalign \
   --detect-variants \
   --min-variant-coverage 1 \
   --min-variant-quality 20
+```
 
 ### 3. Coverage Statistics
 Analyze the coverage of an existing alignment.
 
+```bash
 python3 main.py -t dumpalign \
   -g example_ref_mid.fa \
   -k 12 \
   --reads s_example_k150_n10k.fq \
   --coverage
+```
