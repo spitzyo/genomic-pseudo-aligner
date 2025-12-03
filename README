@@ -1,0 +1,18 @@
+# Biosequence / Yonatan Spitz
+
+## Extensions:
+
+* EXTQUALITY: this extension filters out reads which do not meet the required quality score, it happens before the "basic" pseudo-alignment algorithm, and may be enabled using different arguments in the command line.
+
+* EXTCOVERAGE: gives us information as of how many unique or ambiguous reads cover a specific position, as well as provides overall statistics about the coverage.
+
+* EXTVARTRACK: this extension tries to identify some specific one-base differences between the reads and reference genomes and to define them as "variants", giving them some biological significance, in a way. This extension runs after the "basic" alignment, and gets the following arguments in command line: --min-variant-quality, --min-variant-coverage (otherwise, default values are used). It is executed using the --detect-variants flag. The output is a json printout (after the alignment results), that contains two parts. First, every variant is mentioned by its position in the sequence, and it shows some info about the variant (such as the base in the reference genome, and the "alternate" base in the read). Secondly, it shows overall statistics about the number of variants found by the algorithm. It is very cool.
+
+
+## Design
+
+I chose to divide the code to seven different modules - two for the different classes that mostly hold genomic data, one for helper functions, one that executes the tasks (dumping, building reference, etc.), two (one for every extension - EXTCOVERAGE and EXTVARTRACK) and the last is main.py which mostly deals with the arguments received from user in command line, and delegates the work to the different modules. In every module, I tried to keep my methods and functions as modular as possible. This design helped me with building a robust code, that is easily manageable, and may be extended when needed. This design also helped me to easily debug problems I faced, mostly when trying to add the new extensions.
+
+I am glad I chose to use many decorators and helper functions, it has helped me to maintain a clean and neat code. For example, I created a small function that receives a filename (and extension), and a file mode (w or r, etc) and can handle both gzip formats, and regular formats. Also, the decorators have helped me avoid writing repetitive blocks of code to handle different file writing and reading problems that may occur throughout the code.
+
+I chose to implement a new extension that was not mentioned in the instructions, because I am fascinated with the idea of SNPs, every since I learned about it in our computational biology intro class. When I tried to think how to implement it into the code, I discovered that I could use some of the same techniques I used to implement EXTCOVERAGE (for example, adding a flag in the Aligner class to activate some functionality). This has made the implementation somewhat okay. Now I am glad that my program can also identify, when needed, slight changes in the genes and identify them as variants. 

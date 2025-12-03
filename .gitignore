@@ -1,0 +1,19 @@
+# Ignore system cache files
+__pycache__/
+*.DS_Store
+
+# Ignore large input data files
+*.fa
+*.fasta
+*.fq
+*.fastq
+*.gz
+
+# Ignore generated output files (we don't want to save these results)
+*.aln
+*.kdb
+*.json
+
+# Ignore virtual environment (if you have one)
+.venv/
+env/
