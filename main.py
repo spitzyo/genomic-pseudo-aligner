@@ -1,21 +1,15 @@
-#!/usr/bin/env python3
-
 ####################        Imports         ####################
 
 import argparse
 from basic_tasks import (reference_task, dumpref_task,
                          align_task, dumpalign_task)
 
-####################        Constants         ####################
-
-nucleo_letters = {'A', 'C', 'G', 'T', 'N'} # a set of possible letters
-
 ####################         Program          ####################
 
 
 def readargs(args=None):
     parser = argparse.ArgumentParser(
-                    prog='Biosequence project',
+                    prog='genomic-pseudo-aligner',
     )
     #General arguments
     parser.add_argument('-t', '--task',

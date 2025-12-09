@@ -278,8 +278,9 @@ def align_task(args):
     reads = import_fastq(args.reads) # loading reads from file
     for read in reads: # iterating and aligning each read
         aligner.align_read(read, k, m, p,
-                           MRQ=args.min_read_quality, MKQ=args.min_kmer_quality
-                           , MG=args.max_genomes) # execute alignment of read
+                           min_read_quality=args.min_read_quality,
+                           min_kmer_quality=args.min_kmer_quality,
+                           max_genomes=args.max_genomes)
         # EXTQUALITY: quality filtering would be executed if required
 
     if args.alignfile:

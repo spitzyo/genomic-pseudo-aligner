@@ -9,7 +9,7 @@ import sys
 
 
 ####################        Constants         ####################
-nucleo_letters = {'A', 'C', 'G', 'T', 'N'} # a set of possible letters
+NUCLEO_LETTERS = {'A', 'C', 'G', 'T', 'N'} # a set of possible letters
 
 ####################     Error Handling       ####################
 
@@ -100,7 +100,7 @@ def import_fasta(filename) -> List[Reference]:
                     current_id = line[1:].strip()
                     sequence = [] # after creating instance -> inits a new
                 else:
-                    if all(char in nucleo_letters for char in line):
+                    if all(char in NUCLEO_LETTERS for char in line):
                         sequence.append(line) # only if valid DNA letters
             if current_id and sequence:
                 sequence = ''.join(sequence) #last
@@ -147,7 +147,7 @@ def import_fastq(filename) -> List[Read]:
 
                 if not header.startswith("@") or not plus.startswith("+"):
                     continue  # invalid format
-                if not all(char in nucleo_letters for char in sequence):
+                if not all(char in NUCLEO_LETTERS for char in sequence):
                     continue  # invalid sequence
                 quality_str = [ord(char) - 33 for char in quality.strip()]
                 # converting using a Phred33 format

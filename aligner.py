@@ -123,21 +123,24 @@ class Aligner:
         as it introduces a new attribute to be used."""
         self.__variant_tracker = VariantTracker(min_quality, min_coverage)
 
-    def align_read(self, read, k, m=1, p=1,
-                   MRQ=None, MKQ=None, MG=None) -> None:
+    def align_read(self, read, k, m=1, p=1, min_read_quality=None,
+                   min_kmer_quality=None, max_genomes=None) -> None:
         """
         This method aligns a single Read to the ref genomes k-mers.
         :param read: a Read instance (to be aligned).
         :param k: length of k-mer.
         :param m: max diff in the num of k-mers for ambiguous mappings.
         :param p: max diff in total k-mers to maintain unique status.
-        :params MRQ, MKQ, MG: with None default values (EXTQUALITY).
+        :param min_read_quality: filter reads below mean quality (EXTQUALITY).
+        :param min_kmer_quality: filter k-mers below quality (EXTQUALITY).
+        :param max_genomes: filter k-mers from too many genomes (EXTQUALITY).
         :return: should set the status of the Read as an attr and return None.
         """
 
         # EXTQUALITY
-        if any([MRQ, MKQ, MG]): # if any of them is not None
-            kmers = self.__apply_quality(read, k, MRQ, MKQ, MG)
+        if any([min_read_quality, min_kmer_quality, max_genomes]):
+            kmers = self.__apply_quality(read, k, min_read_quality,
+                                         min_kmer_quality, max_genomes)
             if kmers is None: # Read filtered by EXTQUALITY
                 read.status = 'filtered'
                 return None # and continue to the next Read
@@ -151,7 +154,7 @@ class Aligner:
         specific_counts, mapped_genomes, genome_positions =\
             self.__count_kmers_with_pos(kmers, k)  # helper func
 
-        # EXTVARTRACK
+        # EXTVARTRACK: process vars if tracker is on
         if self.__variant_tracker and genome_positions:
             for genome_id, positions in genome_positions.items():
                 if positions:
@@ -162,7 +165,7 @@ class Aligner:
         if not specific_counts:
             # this case is also relevant for a read length < k size
             read.status = 'unmapped'
-            self.__accumulate_status('unmapped', {})
+            self.__accumulate_status('unmapped', [])
             return None
 
         # Step 2.2: Compare specific k-mer counts
@@ -180,9 +183,7 @@ class Aligner:
             # Step 2.3: Validation with total k-mer counts
             mapped_count = mapped_genomes[top_genome]
             max_count = 0
-            for count in mapped_genomes.values():
-                if count > max_count:
-                    max_count = count
+            max_count = max(mapped_genomes.values()) if mapped_genomes else 0
 
             # Step 2.3.2.4: Check if the difference is too large
             if max_count - mapped_count > p:
@@ -198,18 +199,12 @@ class Aligner:
                 read.mapped_genomes = [top_genome]
         else:
             read.status = 'ambiguous'
-            mapped_genome_list = []
-            for gen_id in specific_counts.keys():
-                mapped_genome_list.append(gen_id)
-            read.mapped_genomes = mapped_genome_list
+            read.mapped_genomes = list(specific_counts.keys())
 
-        # Accumulate the status for statistics
-        mapped_genomes = {}
-        for gen_id in read.mapped_genomes:
-            mapped_genomes[gen_id] = 1
-        self.__accumulate_status(read.status, mapped_genomes)
+        # update statistics
+        self.__accumulate_status(read.status, read.mapped_genomes)
 
-        # EXTCOVERAGE:
+        # EXTCOVERAGE: add coverage
         if self.__coverage:
             # add the read coverage attr to the Coverage inst (of this Aligner)
             if read.status != 'unmapped': # either unique or ambiguous
@@ -251,7 +246,7 @@ class Aligner:
                         genome_positions[genome_id].add(pos + i)
         return specific_counts, mapped_genomes, genome_positions
 
-    def __accumulate_status(self, status, mapped_genomes: dict) -> None:
+    def __accumulate_status(self, status, mapped_genomes: List[str]) -> None:
         """
         This helper method accumulates the alignment status into the attribute.
         :param status: the status of the Read (either unambiguous or unique).
