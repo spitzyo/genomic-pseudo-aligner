@@ -72,33 +72,33 @@ class Aligner:
     """
 
     def __init__(self, kmer_collection):
-        self.__kmer_collection = kmer_collection # kmers of all ref genomes
+        self._kmer_collection = kmer_collection # kmers of all ref genomes
         # alignment_summary connected between a genome id -> mapping stats:
         self.alignment_summary = {}
 
         # These attributes are relevant for extensions (not the basic algo)
-        self.__coverage = None # EXTCOVERAGE
-        self.__quality_stats = {'filtered_quality_reads': 0,
+        self._coverage = None # EXTCOVERAGE
+        self._quality_stats = {'filtered_quality_reads': 0,
                                 'filtered_quality_kmers': 0,
                                 'filtered_hr_kmers': 0} # EXTQUALITY
-        self.__variant_tracker = None # EXTVARTRACK
+        self._variant_tracker = None # EXTVARTRACK
 
     def enable_coverage(self, genome_lens: Dict[str, int], min_coverage = 1):
         """This method enables coverage: EXTCOVERAGE, introduces a new attr."""
-        self.__coverage = Coverage(genome_lens, min_coverage)
+        self._coverage = Coverage(genome_lens, min_coverage)
 
-    def __apply_quality(self, read, k, min_read_quality,
+    def _apply_quality(self, read, k, min_read_quality,
                         min_kmer_quality, max_genomes) -> [None, List]:
         """This EXTQUALITY helper method applies quality filters (as given
         by user) and returns only the filters kmers to be aligned."""
         if min_read_quality and read.get_mean_quality() < min_read_quality:
-            self.__quality_stats['filtered_quality_reads'] += 1
+            self._quality_stats['filtered_quality_reads'] += 1
             return None # keeping track in stats of filtered reads
         kmers = read.get_kmers(k, min_kmer_quality) # get all filtered kmers
         if min_kmer_quality: # keeping track of the filtered kmers
             # calcs the maximal number of kmers that can be made from Read:
             max_kmer_num = len(read.sequence)-k+1
-            self.__quality_stats['filtered_quality_kmers'] += \
+            self._quality_stats['filtered_quality_kmers'] += \
                 (max_kmer_num - len(kmers))
             # len(kmers) represents the num of kmers after filtering with MKQ
         if max_genomes:
@@ -106,12 +106,12 @@ class Aligner:
             filtered_kmers = []
             for kmer in kmers:
                 kmer_seq = kmer.sequence
-                ref_kmer = self.__kmer_collection.get_kmer(kmer_seq)
+                ref_kmer = self._kmer_collection.get_kmer(kmer_seq)
                 if ref_kmer is not None:
                     num_genomes = len(ref_kmer.get_genomes())
                     if num_genomes <= max_genomes: # filtering
                         filtered_kmers.append(kmer) # add to filtered kmers
-            self.__quality_stats['filtered_hr_kmers'] += \
+            self._quality_stats['filtered_hr_kmers'] += \
                 (num_of_kmers - len(filtered_kmers)) # update filtering stats
             if not filtered_kmers:
                 return None # and Read would be marked as unmapped
@@ -121,7 +121,7 @@ class Aligner:
     def enable_vartracking(self, min_quality, min_coverage):
         """This method enables variant tracking: EXTVARTRACK,
         as it introduces a new attribute to be used."""
-        self.__variant_tracker = VariantTracker(min_quality, min_coverage)
+        self._variant_tracker = VariantTracker(min_quality, min_coverage)
 
     def align_read(self, read, k, m=1, p=1, min_read_quality=None,
                    min_kmer_quality=None, max_genomes=None) -> None:
@@ -139,7 +139,7 @@ class Aligner:
 
         # EXTQUALITY
         if any([min_read_quality, min_kmer_quality, max_genomes]):
-            kmers = self.__apply_quality(read, k, min_read_quality,
+            kmers = self._apply_quality(read, k, min_read_quality,
                                          min_kmer_quality, max_genomes)
             if kmers is None: # Read filtered by EXTQUALITY
                 read.status = 'filtered'
@@ -152,20 +152,20 @@ class Aligner:
             return None # finish with this read
 
         specific_counts, mapped_genomes, genome_positions =\
-            self.__count_kmers_with_pos(kmers, k)  # helper func
+            self._count_kmers_with_pos(kmers, k)  # helper func
 
         # EXTVARTRACK: process vars if tracker is on
-        if self.__variant_tracker and genome_positions:
+        if self._variant_tracker and genome_positions:
             for genome_id, positions in genome_positions.items():
                 if positions:
-                    self.__process_variants(read, genome_id, positions)
+                    self._process_variants(read, genome_id, positions)
 
         # Basic algorithm:
         # Step 2.1: No specific k-mers -> unmapped
         if not specific_counts:
             # this case is also relevant for a read length < k size
             read.status = 'unmapped'
-            self.__accumulate_status('unmapped', [])
+            self._accumulate_status('unmapped', [])
             return None
 
         # Step 2.2: Compare specific k-mer counts
@@ -182,7 +182,6 @@ class Aligner:
         if top_specific_count - second_specific_count >= m:
             # Step 2.3: Validation with total k-mer counts
             mapped_count = mapped_genomes[top_genome]
-            max_count = 0
             max_count = max(mapped_genomes.values()) if mapped_genomes else 0
 
             # Step 2.3.2.4: Check if the difference is too large
@@ -202,17 +201,17 @@ class Aligner:
             read.mapped_genomes = list(specific_counts.keys())
 
         # update statistics
-        self.__accumulate_status(read.status, read.mapped_genomes)
+        self._accumulate_status(read.status, read.mapped_genomes)
 
         # EXTCOVERAGE: add coverage
-        if self.__coverage:
+        if self._coverage:
             # add the read coverage attr to the Coverage inst (of this Aligner)
             if read.status != 'unmapped': # either unique or ambiguous
                 for gen_id in read.mapped_genomes:
-                    self.__coverage.add_read_coverage(read, gen_id,
+                    self._coverage.add_read_coverage(read, gen_id,
                                                       genome_positions[gen_id])
 
-    def __count_kmers_with_pos(self, kmers: List[Kmer], k):
+    def _count_kmers_with_pos(self, kmers: List[Kmer], k):
         """This method counts specific and total kmers for every genome,
         and tracks positions of any matched k-mers here (genome_positions)."""
 
@@ -221,7 +220,7 @@ class Aligner:
         genome_positions = defaultdict(set) # default dict with an empty set
 
         for kmer in kmers:
-            ref_kmer = self.__kmer_collection.get_kmer(kmer.sequence)
+            ref_kmer = self._kmer_collection.get_kmer(kmer.sequence)
             if not ref_kmer:
                 continue
 
@@ -246,7 +245,7 @@ class Aligner:
                         genome_positions[genome_id].add(pos + i)
         return specific_counts, mapped_genomes, genome_positions
 
-    def __accumulate_status(self, status, mapped_genomes: List[str]) -> None:
+    def _accumulate_status(self, status, mapped_genomes: List[str]) -> None:
         """
         This helper method accumulates the alignment status into the attribute.
         :param status: the status of the Read (either unambiguous or unique).
@@ -282,19 +281,19 @@ class Aligner:
                                                        None]:
         """This COVERAGE EXTENSION method calls the dump coverage
         method of Coverage class to dump it to the console."""
-        if self.__coverage is None:
+        if self._coverage is None:
             return  # no coverage if the attr is None
-        return self.__coverage.dump_coverage(selected_genomes,
+        return self._coverage.dump_coverage(selected_genomes,
                                              full_coverage, False)
 
     # EXTQUALITY
     def get_quality_stats(self) -> dict:
         """This QUALITY EXTENSION method returns Reads' quality stats."""
-        return self.__quality_stats if self.__quality_stats else {}
+        return self._quality_stats if self._quality_stats else {}
         # in case there are no quality statistics, return empty dict
 
     # EXTVARTRACK
-    def __process_variants(self, read, genome_id, positions):
+    def _process_variants(self, read, genome_id, positions):
         """This method performs variant detection after the alignment,
         by directly comparing the sequences."""
         read_seq = read.sequence
@@ -302,7 +301,7 @@ class Aligner:
 
         # get the genome instance:
         genome = None
-        for g in self.__kmer_collection.get_all_genomes():
+        for g in self._kmer_collection.get_all_genomes():
             if g.identifier == genome_id:
                 genome = g
                 break
@@ -320,7 +319,7 @@ class Aligner:
             if read_base != ref_base:  # diff between ref and read - found var
                 pos = start_pos + i
                 quality = read_quality[i]
-                self.__variant_tracker.add_direct_variant(genome_id, pos,
+                self._variant_tracker.add_direct_variant(genome_id, pos,
                                                           ref_base,
                                                           read_base,
                                                           quality)
@@ -329,6 +328,6 @@ class Aligner:
                                                        None]:
         """This VARIANT TRACKING EXTENSION method calls the dump variants
         method of the relevant class to return the final VarTrack data."""
-        if self.__variant_tracker is None:
+        if self._variant_tracker is None:
             return
-        return self.__variant_tracker.dump_variants(selected_genomes)
+        return self._variant_tracker.dump_variants(selected_genomes)
