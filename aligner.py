@@ -45,14 +45,6 @@ class Read:
         quality_of_kmer = self.quality[start_pos:start_pos + k]
         return sum(quality_of_kmer) / len(quality_of_kmer)
 
-    def set_status(self, status: str) -> None:
-        """This method sets the status of the Read."""
-        self.status = status
-
-    def set_mapped_genomes(self, genomes: List[str]) -> None:
-        """This method sets the mapped genomes of a Read (from id list)."""
-        self.mapped_genomes = genomes
-
     def get_kmers(self, k, min_kmer_quality=None) -> List[Kmer]:
         """This function extracts k-mers from this Read and returns a list.
         EXTQUALITY: kmers may be filtered by their quality scores."""
@@ -147,13 +139,13 @@ class Aligner:
         if any([MRQ, MKQ, MG]): # if any of them is not None
             kmers = self.__apply_quality(read, k, MRQ, MKQ, MG)
             if kmers is None: # Read filtered by EXTQUALITY
-                read.set_status('filtered')
+                read.status = 'filtered'
                 return None # and continue to the next Read
         else: # if no quality filtering is required
             kmers = read.get_kmers(k)
 
         if not kmers: # EXTQUALITY: no kmers left after filtering
-            read.set_status('filtered')
+            read.status = 'filtered'
             return None # finish with this read
 
         specific_counts, mapped_genomes, genome_positions =\
@@ -169,7 +161,7 @@ class Aligner:
         # Step 2.1: No specific k-mers -> unmapped
         if not specific_counts:
             # this case is also relevant for a read length < k size
-            read.set_status('unmapped')
+            read.status = 'unmapped'
             self.__accumulate_status('unmapped', {})
             return None
 
@@ -194,22 +186,22 @@ class Aligner:
 
             # Step 2.3.2.4: Check if the difference is too large
             if max_count - mapped_count > p:
-                read.set_status('ambiguous')
+                read.status = 'ambiguous'
                 # Include all genomes with high enough counts
                 qualified_genomes = []
                 for gen_id, count in mapped_genomes.items():
                     if count >= mapped_count:
                         qualified_genomes.append(gen_id)
-                read.set_mapped_genomes(qualified_genomes)
+                read.mapped_genomes = qualified_genomes
             else:
-                read.set_status('unique')
-                read.set_mapped_genomes([top_genome])
+                read.status = 'unique'
+                read.mapped_genomes = [top_genome]
         else:
-            read.set_status('ambiguous')
+            read.status = 'ambiguous'
             mapped_genome_list = []
             for gen_id in specific_counts.keys():
                 mapped_genome_list.append(gen_id)
-            read.set_mapped_genomes(mapped_genome_list)
+            read.mapped_genomes = mapped_genome_list
 
         # Accumulate the status for statistics
         mapped_genomes = {}

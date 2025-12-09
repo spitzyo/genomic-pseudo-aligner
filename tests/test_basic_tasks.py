@@ -99,8 +99,8 @@ def test_dump_reference_to_file(tmp_path):
 
 def test_dump_alignment(tmp_path):
     read = Read("test_read", "ACGT", "FFFF")
-    read.set_status("unique")
-    read.set_mapped_genomes(["genome1"])
+    read.status = "unique"
+    read.mapped_genomes = ["genome1"]
     output_file = tmp_path / "alignment_dump.json"
     dump_alignment(reads=[read], output_file=str(output_file))
     assert os.path.exists(output_file) # just check if the file is created
@@ -108,8 +108,8 @@ def test_dump_alignment(tmp_path):
 
 def test_dump_alignment_with_aligner(tmp_path):
     read = Read("test_read", "ACGT", "FFFF")
-    read.set_status("unique")
-    read.set_mapped_genomes(["genome1"])
+    read.status = "unique"
+    read.mapped_genomes = ["genome1"]
     collection = KmerCollection()
     aligner = Aligner(collection)
     output_file = tmp_path / "alignment_dump.json"
