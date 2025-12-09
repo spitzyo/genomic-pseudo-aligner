@@ -62,23 +62,17 @@ def test_reference_task(tmp_path):
     assert os.path.exists(kdb_file) # check if reference kdb file was created
 
 
-def test_dumpref_task(tmp_path):
+def test_dumpref_task(tmp_path, capsys):
     collection = KmerCollection()
     ref = Reference("test_ref", "ACGTACGT")
     collection.add_kmers(["ACG", "CGT"], ref, [0, 1])
     kdb_file = tmp_path / "test.kdb"
     output_file = tmp_path / "dump.json"
-    save_kmer_collection(collection, str(kdb_file)) # save kmers to kdb file
-    args = readargs(["-t", "dumpref", "-r", str(kdb_file)]) # get arguments
-    dumpref_task(args) # run the function
-    original_stdout = sys.stdout # saves whatever was printed to console as var
-    with open(output_file, 'w') as f:
-        sys.stdout = f # writes the dumped data into the file
-        dumpref_task(args) # runs the function again, but info will save to f
-    sys.stdout = original_stdout
-
-    with open(output_file, 'r') as f:
-        content = f.read() # reading from the file
+    save_kmer_collection(collection, str(kdb_file))  # save kmers to kdb file
+    args = readargs(["-t", "dumpref", "-r", str(kdb_file)])  # get arguments
+    dumpref_task(args)
+    captured = capsys.readouterr()  # Capture the output
+    content = captured.out
 
     assert "Kmers" in content # checking the reference is in correct format
     assert "Summary" in content # same format check (general)

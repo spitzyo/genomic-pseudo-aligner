@@ -1,8 +1,11 @@
 ####################         IMPORTS          ####################
+
+import pytest
 from kmers import Reference, KmerCollection
 import gzip
 from helper_functions import (import_fasta, import_fastq, load_kdb_file,
-                              save_kmer_collection, is_pos_int, open_gz_file)
+                              save_kmer_collection, is_pos_int, open_gz_file,
+                              AppErr)
 
 ####################          TESTS           ####################
 
@@ -86,3 +89,8 @@ def test_is_pos_int():
     assert is_pos_int(-3) is False
     assert is_pos_int(5.1) is False
     assert is_pos_int("5") is False
+
+def test_missing_file():
+    """Test that missing files raise AppErr instead of crashing."""
+    with pytest.raises(AppErr):
+        import_fasta("ghost_file.fa")

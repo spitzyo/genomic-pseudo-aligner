@@ -15,7 +15,7 @@ def test_unmapped_read():
     read = Read("r1", "TAAT", "FFFF")
     aligner.align_read(read, k=3)
     assert read.status == "unmapped"
-    # it's clear that neither 'ACG' nor 'TGA' would match with the kmers
+    # Neither 'ACG' nor 'TGC' would match with the kmers
     # in the read that are ['TAA', 'AAT'] -> should be unmapped.
 
 def test_unique_read():
