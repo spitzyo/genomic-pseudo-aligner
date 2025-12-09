@@ -41,7 +41,7 @@ class Read:
         """This method returns the mean (average) quality value for the kmer
         that begins in the start_pos, with a given k length."""
         if len(self.quality) != len(self.sequence):
-            return 0.0 # quality score and seq len do not match
+            return 0.0
         quality_of_kmer = self.quality[start_pos:start_pos + k]
         return sum(quality_of_kmer) / len(quality_of_kmer)
 
@@ -52,13 +52,13 @@ class Read:
         for i in range(len(self.sequence)-k+1):
             k_mer = self.sequence[i:i+k]
             if "N" in k_mer:
-                continue # do not add kmers with "N"
+                continue
 
             # EXTQUALITY
             if min_kmer_quality is not None:
                 kmer_quality = self.get_kmer_quality(i, k)
                 if kmer_quality < min_kmer_quality:
-                    continue # do not add a kmer below threshold
+                    continue
 
             kmer_instance = Kmer(k_mer)
             kmers.append(kmer_instance)
@@ -93,7 +93,7 @@ class Aligner:
         by user) and returns only the filters kmers to be aligned."""
         if min_read_quality and read.get_mean_quality() < min_read_quality:
             self._quality_stats['filtered_quality_reads'] += 1
-            return None # keeping track in stats of filtered reads
+            return None
         kmers = read.get_kmers(k, min_kmer_quality) # get all filtered kmers
         if min_kmer_quality: # keeping track of the filtered kmers
             # calcs the maximal number of kmers that can be made from Read:
@@ -115,22 +115,23 @@ class Aligner:
                 (num_of_kmers - len(filtered_kmers)) # update filtering stats
             if not filtered_kmers:
                 return None # and Read would be marked as unmapped
-            kmers = filtered_kmers # update the kmers after filter
-        return kmers # after three possible filtering processes
+            kmers = filtered_kmers
+        return kmers
 
     def enable_vartracking(self, min_quality, min_coverage):
         """This method enables variant tracking: EXTVARTRACK,
         as it introduces a new attribute to be used."""
         self._variant_tracker = VariantTracker(min_quality, min_coverage)
 
-    def align_read(self, read, k, m=1, p=1, min_read_quality=None,
-                   min_kmer_quality=None, max_genomes=None) -> None:
+    def align_read(self, read, k, unique_diff=1, total_diff=1,
+                   min_read_quality=None, min_kmer_quality=None,
+                   max_genomes=None) -> None:
         """
         This method aligns a single Read to the ref genomes k-mers.
         :param read: a Read instance (to be aligned).
         :param k: length of k-mer.
-        :param m: max diff in the num of k-mers for ambiguous mappings.
-        :param p: max diff in total k-mers to maintain unique status.
+        :param unique_diff: threshold for distinguishing unique vs ambiguous.
+        :param total_diff: max diff in total k-mers to maintain unique status.
         :param min_read_quality: filter reads below mean quality (EXTQUALITY).
         :param min_kmer_quality: filter k-mers below quality (EXTQUALITY).
         :param max_genomes: filter k-mers from too many genomes (EXTQUALITY).
@@ -147,28 +148,27 @@ class Aligner:
         else: # if no quality filtering is required
             kmers = read.get_kmers(k)
 
-        if not kmers: # EXTQUALITY: no kmers left after filtering
+        if not kmers:
             read.status = 'filtered'
-            return None # finish with this read
+            return None
 
         specific_counts, mapped_genomes, genome_positions =\
             self._count_kmers_with_pos(kmers, k)  # helper func
 
-        # EXTVARTRACK: process vars if tracker is on
         if self._variant_tracker and genome_positions:
             for genome_id, positions in genome_positions.items():
                 if positions:
                     self._process_variants(read, genome_id, positions)
 
         # Basic algorithm:
-        # Step 2.1: No specific k-mers -> unmapped
+        # No specific k-mers -> unmapped
         if not specific_counts:
             # this case is also relevant for a read length < k size
             read.status = 'unmapped'
             self._accumulate_status('unmapped', [])
             return None
 
-        # Step 2.2: Compare specific k-mer counts
+        # Compare specific k-mer counts
         sorted_specific = sorted(specific_counts.items(),
                                  key=lambda x: x[1], reverse=True)
         top_genome = sorted_specific[0][0]
@@ -179,13 +179,13 @@ class Aligner:
         else:
             second_specific_count = 0
 
-        if top_specific_count - second_specific_count >= m:
-            # Step 2.3: Validation with total k-mer counts
+        if top_specific_count - second_specific_count >= unique_diff:
+            # Validation with total k-mer counts
             mapped_count = mapped_genomes[top_genome]
             max_count = max(mapped_genomes.values()) if mapped_genomes else 0
 
-            # Step 2.3.2.4: Check if the difference is too large
-            if max_count - mapped_count > p:
+            # Check if the difference is too large
+            if max_count - mapped_count > total_diff:
                 read.status = 'ambiguous'
                 # Include all genomes with high enough counts
                 qualified_genomes = []
@@ -208,8 +208,13 @@ class Aligner:
             # add the read coverage attr to the Coverage inst (of this Aligner)
             if read.status != 'unmapped': # either unique or ambiguous
                 for gen_id in read.mapped_genomes:
+                    full_positions = set()
+                    for start_pos in genome_positions[gen_id]:
+                        for i in range(k):
+                            full_positions.add(start_pos + i)
+
                     self._coverage.add_read_coverage(read, gen_id,
-                                                      genome_positions[gen_id])
+                                                     full_positions)
 
     def _count_kmers_with_pos(self, kmers: List[Kmer], k):
         """This method counts specific and total kmers for every genome,
@@ -239,10 +244,9 @@ class Aligner:
                     mapped_genomes[genome_id] = 0
                 mapped_genomes[genome_id] += 1
 
-                # getting all kmer positions in this genome:
                 for pos in ref_kmer.get_positions(genome):
-                    for i in range(k): # adding all pos for a k-long kmer
-                        genome_positions[genome_id].add(pos + i)
+                    # only store start position to save memory
+                    genome_positions[genome_id].add(pos)
         return specific_counts, mapped_genomes, genome_positions
 
     def _accumulate_status(self, status, mapped_genomes: List[str]) -> None:
@@ -257,15 +261,15 @@ class Aligner:
                 self.alignment_summary[genome_identifier] = {'unique': 0,
                                                                'ambiguous': 0,
                                                                'unmapped': 0,}
-            self.alignment_summary[genome_identifier][status] += 1 # update
+            self.alignment_summary[genome_identifier][status] += 1
 
-    def align_reads(self, reads, k, m=1, p=1) -> None:
+    def align_reads(self, reads, k, unique_diff=1, total_diff=1) -> None:
         """
-        This method aligns a Reads list to  k-mer collection (of ref genomes).
+        Aligns a Reads list to  k-mer collection (of ref genomes).
         Params are the same as in prev method align_reads().
         """
         for read in reads:
-            self.align_read(read, k, m, p)
+            self.align_read(read, k, unique_diff, total_diff)
         return None
 
     def add_genome_to_summary(self, genome_id: str) -> None:

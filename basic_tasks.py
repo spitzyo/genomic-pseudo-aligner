@@ -224,13 +224,13 @@ def align_task(args):
         print("Error: Unable to build or import a kmer reference.")
         return
 
-    m = int(args.unique_threshold) \
+    unique_diff = int(args.unique_threshold) \
         if (is_pos_int(args.unique_threshold)) else 1
-    p = int(args.ambiguous_threhold) \
+    total_diff = int(args.ambiguous_threhold) \
         if (is_pos_int(args.ambiguous_threhold)) else 1
-    # m, p set to default values if not ints / smaller than 0
+    # unique and total diff set to default values if not ints / smaller than 0
 
-    aligner = Aligner(kmer_collection) # inits an aligner instance with kmers
+    aligner = Aligner(kmer_collection)
     for genome in kmer_collection.get_all_genomes():
         aligner.add_genome_to_summary(genome.identifier)
 
@@ -250,8 +250,8 @@ def align_task(args):
             if args.min_variant_coverage else None)
 
     reads = import_fastq(args.reads) # loading reads from file
-    for read in reads: # iterating and aligning each read
-        aligner.align_read(read, k, m, p,
+    for read in reads:
+        aligner.align_read(read, k, unique_diff, total_diff,
                            min_read_quality=args.min_read_quality,
                            min_kmer_quality=args.min_kmer_quality,
                            max_genomes=args.max_genomes)

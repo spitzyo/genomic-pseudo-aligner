@@ -36,7 +36,7 @@ def readargs(args=None):
     parser.add_argument('-m', '--unique-threshold',
                         help="unique k-mer threshold",
                         )
-    parser.add_argument('-p', '--ambiguous-threhold',
+    parser.add_argument('-p', '--ambiguous-threshold',
                         help="ambiguous k-mer threshold",
                         )
     parser.add_argument('--min-read-quality',
@@ -88,10 +88,10 @@ def main():
             sys.exit(1)
 
     except AppErr as e: # catch the errors raised
-        print(e)
+        sys.stderr.write(f"{e}\n")
         sys.exit(1)
     except Exception as e:
-        print(f"Unexpected System Error: {e}")
+        sys.stderr.write(f"Unexpected System Error: {e}\n")
         sys.exit(1)
 
 if __name__=="__main__":

@@ -65,7 +65,7 @@ class VariantTracker:
                            quality) -> None:
         """Records a potential variant if it meets quality thresholds."""
         if quality < self._min_quality:
-            return # do not process low quality reads
+            return
 
         if genome_id not in self._variants:
             self._variants[genome_id] = {}

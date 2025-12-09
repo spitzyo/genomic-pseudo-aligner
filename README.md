@@ -90,3 +90,8 @@ To run the comprehensive test suite, install dependencies and run pytest:
 pip install -r requirements.txt
 python3 -m pytest
 ```
+
+## ⚠️ Algorithm Limitations
+As a pseudo-aligner, this tool is designed for speed and coverage estimation, not exact alignment. 
+* **Indels:** It does not handle Insertions or Deletions (gaps). It assumes perfect contiguous k-mer matches.
+* **Heuristic:** The mapping is based on k-mer voting only.

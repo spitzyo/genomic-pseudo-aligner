@@ -46,7 +46,7 @@ def test_ambiguous_read():
     # this Read contains kmers from both genomes
 
     # make it ambiguous with m=2 parameter passed:
-    aligner.align_read(read, k=3, m=2)
+    aligner.align_read(read, k=3, unique_diff=2)
     assert read.status == "ambiguous"
     assert set(read.mapped_genomes) == {"genome1", "genome2"}
 

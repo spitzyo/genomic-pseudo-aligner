@@ -22,7 +22,7 @@ class Reference:
         self.identifier = identifier
         self.seq = sequence
         self._ref_kmers = {} # dict to hold kmers and their positions
-        self.total_bases = len(sequence) # num of bases == seq length
+        self.total_bases = len(sequence)
 
     def add_ref_kmers(self, k, kmer_collection) -> None:
         """
@@ -31,17 +31,15 @@ class Reference:
         :param k: length of every k-mer.
         :param kmer_collection: storage of k-mers (an KmerStorage instance).
         """
-        if not isinstance(k, int) or k <= 0: # k validity
+        if not isinstance(k, int) or k <= 0:
             raise ValueError(f"k size must be a positive integer, got {k}.")
-        if k > self.total_bases: # handling invalid k values
-            return None # do not process kmers if size is longer than seq
+        if k > self.total_bases:
+            return None
 
-        kmer = self.seq[0:k]
-        if "N" not in kmer:
-            kmer_collection.add_kmers([kmer], self, [0])
-        for i in range(1, self.total_bases - k + 1):
-            kmer = kmer[1:] + self.seq[i+k-1]
-            if "N" not in kmer: kmer_collection.add_kmers([kmer], self, [i])
+        for i in range(self.total_bases - k + 1):
+            kmer = self.seq[i: i + k]
+            if "N" not in kmer:
+                kmer_collection.add_kmers([kmer], self, [i])
 
 
 class Kmer:
@@ -86,7 +84,7 @@ class Kmer:
 
 class KmerCollection:
     """
-    This class stores and manages a collection of k-mers from diff genomes.
+    Indexes k-mers from reference genomes to allow O(1) lookups during alignment.
     """
 
     def __init__(self):
