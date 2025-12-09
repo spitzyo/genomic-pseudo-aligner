@@ -1,8 +1,10 @@
 ####################        Imports         ####################
 
+import sys
 import argparse
 from basic_tasks import (reference_task, dumpref_task,
                          align_task, dumpalign_task)
+from helper_functions import AppErr
 
 ####################         Program          ####################
 
@@ -70,18 +72,27 @@ def readargs(args=None):
     return parser.parse_args(args)
 
 def main():
-    args=readargs()
+    try:
+        args = readargs()
 
-    if args.task == "reference":
-        reference_task(args)
-    elif args.task == "dumpref":
-        dumpref_task(args)
-    elif args.task == "align":
-        align_task(args)
-    elif args.task == "dumpalign":
-        dumpalign_task(args)
-    else:
-        print("Error: unknown task")
+        if args.task == "reference":
+            reference_task(args)
+        elif args.task == "dumpref":
+            dumpref_task(args)
+        elif args.task == "align":
+            align_task(args)
+        elif args.task == "dumpalign":
+            dumpalign_task(args)
+        else:
+            print("Error: unknown task")
+            sys.exit(1)
+
+    except AppErr as e: # catch the errors raised
+        print(e)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected System Error: {e}")
+        sys.exit(1)
 
 if __name__=="__main__":
     main()

@@ -13,12 +13,14 @@ NUCLEO_LETTERS = {'A', 'C', 'G', 'T', 'N'} # a set of possible letters
 
 ####################     Error Handling       ####################
 
+class AppErr(Exception):
+    """Custom exception for known application errors (files, permissions)."""
+    pass
+
 def handle_f_read(operation_desc: str) -> Callable:
     """
     This decorator is used to handle errors of file read operations.
     It is used throughout the program with different files that need opening.
-    It treats two common errors, as well as a general exception, and exits
-    the program "gracefully" with exit code 1 (that indicates a failure).
     :param operation_desc: for example, "loading reference databases", etc.
     :return: the decorated function with proper file reading errors' handling.
     """
@@ -26,25 +28,20 @@ def handle_f_read(operation_desc: str) -> Callable:
         @functools.wraps(func) # maintain function attrs after wrapping
         def wrapper(*args, **kwargs):
             try:
-                return func(*args, **kwargs) # if no error
+                return func(*args, **kwargs)
             except FileNotFoundError:
-                print(f"Error: File not found while {operation_desc}.")
-                sys.exit(1)
+                raise AppErr(f"Error: File not found while {operation_desc}.")
             except PermissionError:
-                print(f"Error: Permission denied to "
+                raise AppErr(f"Error: Permission denied to "
                       f"file while {operation_desc}.")
-                sys.exit(1)
             except Exception as e:
-                print(f"Error while {operation_desc}: {str(e)}")
-                sys.exit(1)
+                raise AppErr(f"Error while {operation_desc}: {str(e)}")
         return wrapper
     return decorator
 
 def handle_f_write(operation_desc: str) -> Callable:
     """
     This decorator is used to handle errors of file write operations.
-    It treats two common errors, as well as a general exception, and exits
-    the program gracefully with exit code 1.
     :param operation_desc: for example, "writing alignment results", etc.
     :return: the decorated function with proper file writing errors' handling.
     """
@@ -52,17 +49,14 @@ def handle_f_write(operation_desc: str) -> Callable:
         @functools.wraps(func) # maintain function attrs after wrapping
         def wrapper(*args, **kwargs):
             try:
-                return func(*args, **kwargs) # no error
+                return func(*args, **kwargs)
             except PermissionError:
-                print(f"Error: Permission "
+                raise AppErr(f"Error: Permission "
                       f"denied to file while {operation_desc}.")
-                sys.exit(1)
-            except OSError: # a broader exception than PermissionError
-                print(f"Error: OS error occurred while {operation_desc}.")
-                sys.exit(1)
+            except OSError:
+                raise AppErr(f"Error: OS error occurred while {operation_desc}.")
             except Exception as e:
-                print(f"Error while {operation_desc}: {str(e)}")
-                sys.exit(1)
+                raise AppErr(f"Error while {operation_desc}: {str(e)}")
         return wrapper
     return decorator
 
@@ -79,18 +73,15 @@ def open_gz_file(filename: str, mode='r'):
 def import_fasta(filename) -> List[Reference]:
     """This function imports sequences from a FASTA-formatted file.
     This format is usually used for bacterial genomes."""
-    # check if it is indeed a FASTA file:
     if not filename.endswith(('.fa', '.fasta', '.fa.gz', '.fasta.gz')):
-        print(f"Error: {filename} is not a FASTA-formatted file.")
-        sys.exit(1) # exit the program
+        raise AppErr(f"Error: {filename} is not a FASTA-formatted file.")
 
     def read_fasta_helper():
-        # initializers:
         current_id = ''
         sequence = []
         with open_gz_file(filename, "r") as f:
             for line in f:
-                line = line.strip() # removes whitespaces and so on
+                line = line.strip()
                 if line.startswith(">"):
                     if current_id and sequence: # if valid
                         sequence = ''.join(sequence)
@@ -114,10 +105,8 @@ def load_kdb_file(filename: str) -> KmerCollection:
     This function loads a previously saved kmer collection from a pickle file,
     and returns it as a KmerCollection instance if not corrupt.
     """
-    # check if it is indeed a FASTA file:
     if not filename.endswith('.kdb'):
-        print(f"Error: {filename} is not a KDB file.")
-        sys.exit(1) # exit the program
+        raise AppErr(f"Error: {filename} is not a KDB file.")
 
     with gzip.open(filename, "rb") as f:
         kmer_collection = pickle.load(f)
@@ -127,11 +116,8 @@ def load_kdb_file(filename: str) -> KmerCollection:
 def import_fastq(filename) -> List[Read]:
     """This function imports sequences from a FASTQ-formatted file.
     This format is usually used for NGS-sequenced genomes."""
-
-    # check if it is indeed a FASTA file:
     if not filename.endswith(('.fq', '.fastq', '.fq.gz', '.fastq.gz')):
-        print(f"Error: {filename} is not a FASTQ-formatted file.")
-        sys.exit(1) # exit the program
+        raise AppErr(f"Error: {filename} is not a FASTQ-formatted file.")
 
     def read_fastq_chunks():
         """This helper function basically iterates over 4 line chunks
@@ -140,7 +126,7 @@ def import_fastq(filename) -> List[Read]:
             while True:
                 header = f.readline().strip()
                 if not header:
-                    break # end of file (EOF)
+                    break
                 sequence = f.readline().strip()
                 plus = f.readline().strip()
                 quality = f.readline().strip()
@@ -156,7 +142,7 @@ def import_fastq(filename) -> List[Read]:
                 yield Read(header[1:], sequence, quality_str)
                 # generator: returns and will continue to next in the next call
 
-    return list(read_fastq_chunks()) # returning a list of Read-class items
+    return list(read_fastq_chunks())
 
 ####################        File Writing         ####################
 
@@ -166,8 +152,7 @@ def save_kmer_collection(kmer_collection: KmerCollection,
     """This function saves the kmer collection in a pickle file.
     It uses gzip compression to open the file in binary mode."""
     if not output_file.endswith('.kdb'):
-        print(f"Error: {output_file} is not a KDB file.")
-        sys.exit(1) # exit the program
+        raise AppErr(f"Error: {output_file} is not a KDB file.")
     with gzip.open(output_file, "wb") as f:
         pickle.dump(kmer_collection, f) # type: ignore
 
