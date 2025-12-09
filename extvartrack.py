@@ -19,15 +19,15 @@ class Variant:
         self.__position = pos
         self.__ref_base = ref_base
         self.__alt_base = alt_base
-        self.__quality_score = quality
+        self.quality_score = quality
         self.__supporting_reads = 0 # num of reads showing with spec variant
-        self.__coverage = 0 # num of reads covering this base position
+        self.coverage = 0 # num of reads covering this base position
 
     def update_variant_counts(self, is_variant: bool=True):
         """This method updates counts for this specific variant position.
         The is_variant flag differentiates between whether this read supports
         the variant or whether it supports the Reference genome."""
-        self.__coverage += 1
+        self.coverage += 1
         if is_variant:
             self.__supporting_reads += 1
 
@@ -35,12 +35,6 @@ class Variant:
         """This method returns a tuple that consists of the base in the
         reference genome, and the variation / alternative base."""
         return self.__ref_base, self.__alt_base
-
-    def get_quality_score(self) -> float:
-        return self.__quality_score
-
-    def get_coverage(self) -> float:
-        return self.__coverage
 
 
 class VariantTracker:
@@ -102,7 +96,7 @@ class VariantTracker:
 
         filtered_variants = {}
         for pos, variant in self.__variants[genome_id].items():
-            total_coverage = variant.get_coverage()
+            total_coverage = variant.coverage
             if total_coverage >= self.__min_coverage:
                 filtered_variants[pos] = variant
                 self.__stats[genome_id]['total_variants'] += 1
@@ -134,7 +128,7 @@ class VariantTracker:
                 genome_variants[str(pos)] = \
                     {'reference': ref_base,
                     'alternate': alt_base,
-                    'quality_score': variant.get_quality_score(),
-                    'coverage': variant.get_coverage()}
+                    'quality_score': variant.quality_score,
+                    'coverage': variant.coverage}
             output['Variants'][genome_id] = genome_variants # for e/ genome
         return output # to be dumped or save in a JSON format

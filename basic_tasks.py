@@ -31,10 +31,10 @@ def create_kmer_details(kmer_collection: KmerCollection) -> Dict:
     kmer_details = {}
     all_kmers = kmer_collection.get_all_kmers()
     for kmer_obj in all_kmers:
-        kmer_seq = kmer_obj.get_sequence()  # getting the str from the instance
+        kmer_seq = kmer_obj.sequence  # getting the str from the instance
         kmer_details[kmer_seq] = {} # inits for every kmer
         for genome in kmer_obj.get_genomes():
-            genome_id = genome.get_identifier()
+            genome_id = genome.identifier
             positions = kmer_obj.get_positions(genome)
             if positions: # if positions exist for the genomes
                 if kmer_seq not in kmer_details: # avoiding duplicates
@@ -47,8 +47,8 @@ def create_genome_summary(kmer_collection: KmerCollection) -> Dict:
     """This helper function generates genome summary and statistics."""
     genome_summary = {}  # initializing the final genome details
     for genome in kmer_collection.get_ordered_genomes():
-        genome_id = genome.get_identifier()
-        base_length = genome.get_total_bases()
+        genome_id = genome.identifier
+        base_length = genome.total_bases
 
         genome_kmers = kmer_collection.get_kmers_for_genome(genome)
         unique_kmers = 0
@@ -130,8 +130,8 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         })
 
     for read in reads: # calcs stats for every read
-        status = read.get_status()
-        mapped_genomes = read.get_mapped_genomes()
+        status = read.status
+        mapped_genomes = read.mapped_genomes
 
         if status == 'unique':
             reads_stats['unique_mapped_reads'] += 1
@@ -161,7 +161,7 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
                 }
     elif aligner and hasattr(aligner, 'get_alignment_summary'):
         # Use the aligner's alignment summary
-        alignment_summary = aligner.get_alignment_summary()
+        alignment_summary = aligner.alignment_summary
         for genome_id, stats in alignment_summary.items():
             if genome_id not in genome_mapping_summary:
                 genome_mapping_summary[genome_id] = {'unique_reads': 0,
@@ -256,14 +256,14 @@ def align_task(args):
 
     aligner = Aligner(kmer_collection) # inits an aligner instance with kmers
     for genome in kmer_collection.get_all_genomes():
-        aligner.add_genome_to_summary(genome.get_identifier())
+        aligner.add_genome_to_summary(genome.identifier)
         # this step ensures unmapped genomes appear in the summary output
 
     # EXTCOVERAGE
     if args.coverage:
         genome_lens = {}
         for genome in kmer_collection.get_all_genomes():
-            genome_lens[genome.get_identifier()] = genome.get_total_bases()
+            genome_lens[genome.identifier] = genome.total_bases
         aligner.enable_coverage(genome_lens, args.min_coverage)
 
     # EXTVARTRACK
@@ -285,7 +285,7 @@ def align_task(args):
     if args.alignfile:
         with gzip.open(args.alignfile, "wb") as f:
             pickle.dump((
-                reads, aligner.get_alignment_summary()), f) # type: ignore
+                reads, aligner.alignment_summary), f) # type: ignore
 
     if args.coverage: # output the coverage
         selected_genomes = args.genomes.split(',') if args.genomes else None

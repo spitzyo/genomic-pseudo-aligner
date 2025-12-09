@@ -6,9 +6,9 @@ from kmers import Reference, Kmer, KmerCollection
 # Reference class:
 def test_reference_getters():
     reference = Reference("genome1", "ACGTACGT")
-    assert reference.get_identifier() == "genome1"
-    assert reference.get_sequence() == "ACGTACGT"
-    assert reference.get_total_bases() == 8
+    assert reference.identifier == "genome1"
+    assert reference.seq == "ACGTACGT"
+    assert reference.total_bases == 8
 
 def test_reference_add_kmers():
     reference = Reference("genome1", "ACGTACGT")
@@ -29,7 +29,7 @@ def test_reference_with_n():
 # Kmer class:
 def test_kmer_object():
     kmer = Kmer("ACG")
-    assert kmer.get_sequence() == "ACG"
+    assert kmer.sequence == "ACG"
     assert len(kmer.get_genomes()) == 0 # it shouldn't have any linked genomes
 
 def test_kmer_add_position():

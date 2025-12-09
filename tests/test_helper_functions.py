@@ -28,10 +28,10 @@ def test_import_fasta(tmp_path):
     references = import_fasta(str(fasta_file))
 
     assert len(references) == 2 # make sure two genomes were imported
-    assert references[0].get_identifier() == "Seq1"
-    assert references[0].get_sequence() == "ACGT"
-    assert references[1].get_identifier() == "Seq2"
-    assert references[1].get_sequence() == "TGCA"
+    assert references[0].identifier == "Seq1"
+    assert references[0].seq == "ACGT"
+    assert references[1].identifier == "Seq2"
+    assert references[1].seq == "TGCA"
 
 def test_import_fasta_invalid(tmp_path):
     """This tests checks if import_fasta correctly handles
@@ -40,7 +40,7 @@ def test_import_fasta_invalid(tmp_path):
     fasta_file.write_text(">Valid\nACGT\n>Invalid\nILOVEINTRO\n")
     references = import_fasta(str(fasta_file))
     assert len(references) == 1 # assure only one valid genome was imported
-    assert references[0].get_identifier() == "Valid"
+    assert references[0].identifier == "Valid"
 
 
 def test_save_load_kdb(tmp_path):
@@ -54,9 +54,9 @@ def test_save_load_kdb(tmp_path):
     loaded_kmer = loaded_collection.get_kmer("ACG")
 
     assert loaded_kmer is not None # if import is successful and data retained
-    assert loaded_kmer.get_sequence() == "ACG"
+    assert loaded_kmer.sequence == "ACG"
     assert len(loaded_kmer.get_genomes()) == 1
-    assert loaded_kmer.get_genomes()[0].get_identifier() == "test_ref"
+    assert loaded_kmer.get_genomes()[0].identifier == "test_ref"
 
 
 def test_import_fastq(tmp_path):
@@ -65,10 +65,10 @@ def test_import_fastq(tmp_path):
     reads = import_fastq(str(fastq_file))
 
     assert len(reads) == 2 # check if the two reads were imported from fq file
-    assert reads[0].get_identifier() == "Read1"
-    assert reads[0].get_sequence() == "ACGT"
-    assert reads[1].get_identifier() == "Read2"
-    assert reads[1].get_sequence() == "TGCA"
+    assert reads[0].identifier == "Read1"
+    assert reads[0].sequence == "ACGT"
+    assert reads[1].identifier == "Read2"
+    assert reads[1].sequence == "TGCA"
 
 def test_import_fastq_quality(tmp_path):
     fastq_file = tmp_path / "test.fq"
@@ -77,7 +77,7 @@ def test_import_fastq_quality(tmp_path):
 
     # only one read should be imported because len(ACGT) != len(III):
     assert len(reads) == 1
-    assert reads[0].get_identifier() == "Valid"
+    assert reads[0].identifier == "Valid"
 
 def test_is_pos_int():
     assert is_pos_int("!!!") is False

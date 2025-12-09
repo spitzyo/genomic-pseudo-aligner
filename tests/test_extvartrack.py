@@ -6,12 +6,12 @@ from extvartrack import Variant, VariantTracker
 def test_variant_object():
     my_variant = Variant(10, "A", "C", 25.0)
     assert my_variant.get_bases() == ("A", "C")
-    assert my_variant.get_coverage() == 0
+    assert my_variant.coverage == 0
 
     # Add some reads: one that supports the variant and other that doesn't
     my_variant.update_variant_counts() # default is True (supports variant)
     my_variant.update_variant_counts(False) # if bool is false = supports ref.
-    assert my_variant.get_coverage() == 2 # check how many reads cover position
+    assert my_variant.coverage == 2 # check how many reads cover position
 
 
 def test_varianttracker():

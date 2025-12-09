@@ -32,7 +32,7 @@ class Coverage:
         if genome_id not in self.__genome_lens:
             return # another validity check
 
-        if read.get_status() == 'unique':
+        if read.status == 'unique':
             coverage_dict = self.__unique_counts
         else: # hence read is ambiguous
             coverage_dict = self.__ambig_counts

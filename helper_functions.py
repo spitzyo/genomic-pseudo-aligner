@@ -181,6 +181,6 @@ def is_pos_int(var) -> bool:
 def get_kmer_size_from_collection(kmer_collection: KmerCollection) -> int:
     """This function extracts the kmer size from the collection."""
     if len(kmer_collection.get_all_kmers()) > 0:
-        return len(next(iter(kmer_collection.get_all_kmers())).get_sequence())
+        return len(next(iter(kmer_collection.get_all_kmers())).sequence)
     else:
         print("Collection does not contain any kmers.")

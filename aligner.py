@@ -23,59 +23,42 @@ class Read:
         :param quality_str: converted by the Phred33 format.
         :param status: the status of the read (default is "unmapped").
         """
-        self.__identifier = identifier
-        self.__sequence = sequence
-        self.__quality = quality_str
+        self.identifier = identifier
+        self.sequence = sequence
+        self.quality = quality_str
 
         # Status (unmapped/ambiguous/unique) would be decided upon execution:
-        self.__status = status
-        self.__mapped_genomes = [] # list of mapped Reference's identifiers
-
-    def get_identifier(self) -> str:
-        return self.__identifier
-
-    def get_sequence(self) -> str:
-        return self.__sequence
-
-    def get_quality(self) -> str:
-        return self.__quality
+        self.status = status
+        self.mapped_genomes = [] # list of mapped Reference's identifiers
 
     def get_mean_quality(self) -> float:
         """This method returns the mean (ave) quality value for the read."""
-        if len(self.__quality) != len(self.__sequence):
+        if len(self.quality) != len(self.sequence):
             return 0.0 # if quality score and seq length do not match
-        return sum(self.__quality) / len(self.__quality)
+        return sum(self.quality) / len(self.quality)
 
     def get_kmer_quality(self, start_pos, k) -> float:
         """This method returns the mean (average) quality value for the kmer
         that begins in the start_pos, with a given k length."""
-        if len(self.__quality) != len(self.__sequence):
+        if len(self.quality) != len(self.sequence):
             return 0.0 # quality score and seq len do not match
-        quality_of_kmer = self.__quality[start_pos:start_pos + k]
+        quality_of_kmer = self.quality[start_pos:start_pos + k]
         return sum(quality_of_kmer) / len(quality_of_kmer)
 
     def set_status(self, status: str) -> None:
         """This method sets the status of the Read."""
-        self.__status = status
-
-    def get_status(self) -> str:
-        """This method returns the status of the Read."""
-        return self.__status
+        self.status = status
 
     def set_mapped_genomes(self, genomes: List[str]) -> None:
         """This method sets the mapped genomes of a Read (from id list)."""
-        self.__mapped_genomes = genomes
-
-    def get_mapped_genomes(self) -> List[str]:
-        """This method returns the mapped genomes of a Read."""
-        return self.__mapped_genomes
+        self.mapped_genomes = genomes
 
     def get_kmers(self, k, min_kmer_quality=None) -> List[Kmer]:
         """This function extracts k-mers from this Read and returns a list.
         EXTQUALITY: kmers may be filtered by their quality scores."""
         kmers = []
-        for i in range(len(self.__sequence)-k+1):
-            k_mer = self.__sequence[i:i+k]
+        for i in range(len(self.sequence)-k+1):
+            k_mer = self.sequence[i:i+k]
             if "N" in k_mer:
                 continue # do not add kmers with "N"
 
@@ -99,7 +82,7 @@ class Aligner:
     def __init__(self, kmer_collection):
         self.__kmer_collection = kmer_collection # kmers of all ref genomes
         # alignment_summary connected between a genome id -> mapping stats:
-        self.__alignment_summary = {}
+        self.alignment_summary = {}
 
         # These attributes are relevant for extensions (not the basic algo)
         self.__coverage = None # EXTCOVERAGE
@@ -122,7 +105,7 @@ class Aligner:
         kmers = read.get_kmers(k, min_kmer_quality) # get all filtered kmers
         if min_kmer_quality: # keeping track of the filtered kmers
             # calcs the maximal number of kmers that can be made from Read:
-            max_kmer_num = len(read.get_sequence())-k+1
+            max_kmer_num = len(read.sequence)-k+1
             self.__quality_stats['filtered_quality_kmers'] += \
                 (max_kmer_num - len(kmers))
             # len(kmers) represents the num of kmers after filtering with MKQ
@@ -130,7 +113,7 @@ class Aligner:
             num_of_kmers = len(kmers)
             filtered_kmers = []
             for kmer in kmers:
-                kmer_seq = kmer.get_sequence()
+                kmer_seq = kmer.sequence
                 ref_kmer = self.__kmer_collection.get_kmer(kmer_seq)
                 if ref_kmer is not None:
                     num_genomes = len(ref_kmer.get_genomes())
@@ -230,15 +213,15 @@ class Aligner:
 
         # Accumulate the status for statistics
         mapped_genomes = {}
-        for gen_id in read.get_mapped_genomes():
+        for gen_id in read.mapped_genomes:
             mapped_genomes[gen_id] = 1
-        self.__accumulate_status(read.get_status(), mapped_genomes)
+        self.__accumulate_status(read.status, mapped_genomes)
 
         # EXTCOVERAGE:
         if self.__coverage:
             # add the read coverage attr to the Coverage inst (of this Aligner)
-            if read.get_status() != 'unmapped': # either unique or ambiguous
-                for gen_id in read.get_mapped_genomes():
+            if read.status != 'unmapped': # either unique or ambiguous
+                for gen_id in read.mapped_genomes:
                     self.__coverage.add_read_coverage(read, gen_id,
                                                       genome_positions[gen_id])
 
@@ -251,21 +234,21 @@ class Aligner:
         genome_positions = defaultdict(set) # default dict with an empty set
 
         for kmer in kmers:
-            ref_kmer = self.__kmer_collection.get_kmer(kmer.get_sequence())
+            ref_kmer = self.__kmer_collection.get_kmer(kmer.sequence)
             if not ref_kmer:
                 continue
 
             # Handle specific k-mers
             if ref_kmer.is_specific():
                 genome = ref_kmer.get_genomes()[0]
-                genome_id = genome.get_identifier()
+                genome_id = genome.identifier
                 if genome_id not in specific_counts:
                     specific_counts[genome_id] = 0
                 specific_counts[genome_id] += 1
 
             # Count all k-mers
             for genome in ref_kmer.get_genomes():
-                genome_id = genome.get_identifier()
+                genome_id = genome.identifier
                 if genome_id not in mapped_genomes:
                     mapped_genomes[genome_id] = 0
                 mapped_genomes[genome_id] += 1
@@ -284,11 +267,11 @@ class Aligner:
         """
         for genome_identifier in mapped_genomes:
             # if genome is not in summary:
-            if genome_identifier not in self.__alignment_summary:
-                self.__alignment_summary[genome_identifier] = {'unique': 0,
+            if genome_identifier not in self.alignment_summary:
+                self.alignment_summary[genome_identifier] = {'unique': 0,
                                                                'ambiguous': 0,
                                                                'unmapped': 0,}
-            self.__alignment_summary[genome_identifier][status] += 1 # update
+            self.alignment_summary[genome_identifier][status] += 1 # update
 
     def align_reads(self, reads, k, m=1, p=1) -> None:
         """
@@ -299,13 +282,10 @@ class Aligner:
             self.align_read(read, k, m, p)
         return None
 
-    def get_alignment_summary(self) -> Dict[str, Dict[str, int]]:
-        return self.__alignment_summary
-
     def add_genome_to_summary(self, genome_id: str) -> None:
         """This method adds a genome to alignment summary even when unmapped"""
-        if genome_id not in self.__alignment_summary:
-            self.__alignment_summary[genome_id] = {'unique': 0,
+        if genome_id not in self.alignment_summary:
+            self.alignment_summary[genome_id] = {'unique': 0,
                                                    'ambiguous':0,
                                                    'unmapped': 0}
 
@@ -330,13 +310,13 @@ class Aligner:
     def __process_variants(self, read, genome_id, positions):
         """This method performs variant detection after the alignment,
         by directly comparing the sequences."""
-        read_seq = read.get_sequence()
-        read_quality = read.get_quality()
+        read_seq = read.sequence
+        read_quality = read.quality
 
         # get the genome instance:
         genome = None
         for g in self.__kmer_collection.get_all_genomes():
-            if g.get_identifier() == genome_id:
+            if g.identifier == genome_id:
                 genome = g
                 break
 
@@ -344,8 +324,8 @@ class Aligner:
             return
 
         start_pos = min(positions)
-        end_pos = min(start_pos + len(read_seq), genome.get_total_bases())
-        ref_seq = genome.get_sequence()[start_pos:end_pos] # get ref sequence
+        end_pos = min(start_pos + len(read_seq), genome.total_bases)
+        ref_seq = genome.seq[start_pos:end_pos] # get ref sequence
 
         for i, (read_base, ref_base) in enumerate(zip(read_seq[:
         len(ref_seq)], ref_seq)):

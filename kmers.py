@@ -20,18 +20,10 @@ class Reference:
         :param identifier: a unique identifier for the reference genome.
         :param sequence: the DNA sequence of the reference genome (string).
         """
-        self.__id = identifier
-        self.__seq = sequence
+        self.identifier = identifier
+        self.seq = sequence
         self.__ref_kmers = {} # dict to hold kmers and their positions
-        self.__total_bases = len(sequence) # num of bases == seq length
-
-    def get_identifier(self) -> str:
-        """This function returns the ref genome identifier as a string."""
-        return self.__id
-
-    def get_sequence(self) -> str:
-        """This function returns the reference sequence as a string."""
-        return self.__seq
+        self.total_bases = len(sequence) # num of bases == seq length
 
     def add_ref_kmers(self, k, kmer_collection) -> None:
         """
@@ -43,19 +35,15 @@ class Reference:
         if not isinstance(k, int) or k <= 0: # k validity
             print(f"Error: k size has to be a positive integer, got {k}.")
             sys.exit(1) # exit if invalid
-        if k > self.__total_bases: # handling invalid k values
+        if k > self.total_bases: # handling invalid k values
             return None # do not process kmers if size is longer than seq
 
-        kmer = self.__seq[0:k] # inits a first kmer
+        kmer = self.seq[0:k] # inits a first kmer
         if "N" not in kmer: # N exclusion (N is a wildcard)
             kmer_collection.add_kmers([kmer], self, [0])
-        for i in range(1, self.__total_bases - k + 1):
-            kmer = kmer[1:] + self.__seq[i+k-1] # sliding by one base to rt
+        for i in range(1, self.total_bases - k + 1):
+            kmer = kmer[1:] + self.seq[i+k-1] # sliding by one base to rt
             if "N" not in kmer: kmer_collection.add_kmers([kmer], self, [i])
-
-    def get_total_bases(self) -> int:
-        """The method returns the total num of bases of the genome."""
-        return self.__total_bases
 
 
 class Kmer:
@@ -70,7 +58,7 @@ class Kmer:
         Initialize a k-mer object.
         :param sequence: a string of the DNA sequence.
         """
-        self.__sequence = sequence
+        self.sequence = sequence
         self.__genome_pos = defaultdict(set)
         # a default dictionary of genomes and sets of positions
         self.__specific = None
@@ -99,9 +87,6 @@ class Kmer:
         """This method returns the positions of this kmer in a genome.
         It returns an empty list if nothing is found."""
         return self.__genome_pos.get(genome, [])
-
-    def get_sequence(self) -> str:
-        return self.__sequence
 
 
 class KmerCollection:
