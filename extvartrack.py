@@ -24,16 +24,13 @@ class Variant:
         self.coverage = 0 # num of reads covering this base position
 
     def update_variant_counts(self, is_variant: bool=True):
-        """This method updates counts for this specific variant position.
-        The is_variant flag differentiates between whether this read supports
-        the variant or whether it supports the Reference genome."""
+        """Updates coverage and support counts for this variant position."""
         self.coverage += 1
         if is_variant:
             self.__supporting_reads += 1
 
     def get_bases(self) -> Tuple[str, str]:
-        """This method returns a tuple that consists of the base in the
-        reference genome, and the variation / alternative base."""
+        """Returns a tuple of (reference_base, alternate_base)."""
         return self.__ref_base, self.__alt_base
 
 
@@ -59,21 +56,14 @@ class VariantTracker:
         self.__stats = {}    # genome_id -> statistics_dict
 
     def __init_stats(self, genome_id: str):
-        """This private method inits the stats for a certain genome,
-        and stores it in the stats attribute. It is called by add_variant()."""
-
+        """Initializes the statistics dictionary for a specific genome."""
         if genome_id not in self.__stats:
             self.__stats[genome_id] = {'total_variants': 0,
                                        'filtered_variants': 0}
-            # just inits the place in the dict with empty values (0 for each)
 
     def add_direct_variant(self, genome_id, position, ref_base, alt_base,
                            quality) -> None:
-        """
-        This method adds a potential variant to tracker, by looking at
-        the scenario in which a kmer does not match the Reference genome
-        perfectly, and then we check each pos to find the mismatch's pos.
-        """
+        """Records a potential variant if it meets quality thresholds."""
         if quality < self.__min_quality:
             return # do not process low quality reads
 
@@ -84,15 +74,12 @@ class VariantTracker:
         if position not in self.__variants[genome_id]:
             self.__variants[genome_id][position] = Variant(position, ref_base,
                                                            alt_base, quality)
-        self.__variants[genome_id][position].update_variant_counts() # count
+        self.__variants[genome_id][position].update_variant_counts()
 
     def get_variants(self, genome_id) -> Dict[int, Variant]:
-        """
-        This method returns variants after filtering (by quality thresholds).
-        It uses our given min_quality and min_coverage.
-        """
+        """Returns variants that meet the minimum coverage threshold."""
         if genome_id not in self.__variants:
-            return {} # in case no such genome to check variants for
+            return {}
 
         filtered_variants = {}
         for pos, variant in self.__variants[genome_id].items():
@@ -101,19 +88,16 @@ class VariantTracker:
                 filtered_variants[pos] = variant
                 self.__stats[genome_id]['total_variants'] += 1
             else:
-                self.__stats[genome_id]['total_variants'] += 1 # count in stats
+                self.__stats[genome_id]['total_variants'] += 1
         return filtered_variants
 
     def dump_variants(self, selected_genomes=None) -> Dict:
-        """
-        This method dumps the final variant information in a JSON format.
-        :param selected_genomes: list of genomes to dump (if needed)
-        """
+        """Formats the variant data and statistics for JSON output."""
 
         output = {"Variants": {}, "Statistics": self.__stats}
         if selected_genomes is None:
             genomes = list(self.__variants.keys())
-        else: # in case only some genomes need to be dumped
+        else:
             genomes = selected_genomes
 
         for genome_id in genomes:
@@ -121,14 +105,14 @@ class VariantTracker:
                 continue # skip if this genome has no variants
             variants = self.get_variants(genome_id)
             if not variants:
-                continue # if there are no variants to process
+                continue
             genome_variants = {}
-            for pos, variant in variants.items(): # iterating through the vars
+            for pos, variant in variants.items():
                 ref_base, alt_base = variant.get_bases()
                 genome_variants[str(pos)] = \
                     {'reference': ref_base,
                     'alternate': alt_base,
                     'quality_score': variant.quality_score,
                     'coverage': variant.coverage}
-            output['Variants'][genome_id] = genome_variants # for e/ genome
-        return output # to be dumped or save in a JSON format
+            output['Variants'][genome_id] = genome_variants
+        return output

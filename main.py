@@ -11,27 +11,22 @@ def readargs(args=None):
     parser = argparse.ArgumentParser(
                     prog='genomic-pseudo-aligner',
     )
-    #General arguments
     parser.add_argument('-t', '--task',
                         help="task",
                         required=True
                         )
     parser.add_argument('-g', '--genomefile',
-                        help="Genome fasta file (multiple records)",
+                        help="Path to the reference genome FASTA file.",
                         )
     parser.add_argument('-r', '--referencefile',
-                        help="kdb file. Can be either input or"
-                             "name for output file",
+                        help="Path to the reference k-mer database (.kdb).",
                         )
     parser.add_argument('-k', '--kmer-size',
                         help="length of kmers",
-                        type=int #ensuring k is an int
+                        type=int
                         )
-    #Task specific arguments
-    #align
     parser.add_argument('-a', '--alignfile',
-                        help="aln file. Can be either input "
-                             "or name for output file",
+                        help="Path to the alignment output file (.aln).",
                         )
     parser.add_argument('--reads',
                         help="fastq reads file",
@@ -42,7 +37,6 @@ def readargs(args=None):
     parser.add_argument('-p', '--ambiguous-threhold',
                         help="ambiguous k-mer threshold",
                         )
-    #align+quality
     parser.add_argument('--min-read-quality',
                         type=int,
                         )
@@ -52,7 +46,6 @@ def readargs(args=None):
     parser.add_argument('--max-genomes',
                         type=int,
                         )
-    #coverage
     parser.add_argument('--genomes',
                         )
     parser.add_argument('--coverage',
@@ -65,7 +58,6 @@ def readargs(args=None):
     parser.add_argument('--full-coverage',
                         action='store_true',
                         )
-    # variant detection (new EXTVARTRACK)
     parser.add_argument('--detect-variants',
                         action='store_true',
                         help="Enable variant detection (EXTVARTRACK)")
@@ -80,7 +72,6 @@ def readargs(args=None):
 def main():
     args=readargs()
 
-    # the following if statements execute the relevant functions for the tasks:
     if args.task == "reference":
         reference_task(args)
     elif args.task == "dumpref":
@@ -89,7 +80,7 @@ def main():
         align_task(args)
     elif args.task == "dumpalign":
         dumpalign_task(args)
-    else: # if an invalid task has been called:
+    else:
         print("Error: unknown task")
 
 if __name__=="__main__":

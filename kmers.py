@@ -1,7 +1,6 @@
 ####################         IMPORTS          ####################
 from collections import defaultdict
 from typing import List, Set
-import sys
 
 
 ####################         CLASSES          ####################
@@ -33,16 +32,15 @@ class Reference:
         :param kmer_collection: storage of k-mers (an KmerStorage instance).
         """
         if not isinstance(k, int) or k <= 0: # k validity
-            print(f"Error: k size has to be a positive integer, got {k}.")
-            sys.exit(1) # exit if invalid
+            raise ValueError(f"k size must be a positive integer, got {k}.")
         if k > self.total_bases: # handling invalid k values
             return None # do not process kmers if size is longer than seq
 
-        kmer = self.seq[0:k] # inits a first kmer
-        if "N" not in kmer: # N exclusion (N is a wildcard)
+        kmer = self.seq[0:k]
+        if "N" not in kmer:
             kmer_collection.add_kmers([kmer], self, [0])
         for i in range(1, self.total_bases - k + 1):
-            kmer = kmer[1:] + self.seq[i+k-1] # sliding by one base to rt
+            kmer = kmer[1:] + self.seq[i+k-1]
             if "N" not in kmer: kmer_collection.add_kmers([kmer], self, [i])
 
 
@@ -60,18 +58,16 @@ class Kmer:
         """
         self.sequence = sequence
         self.__genome_pos = defaultdict(set)
-        # a default dictionary of genomes and sets of positions
-        self.__specific = None
-        # defines if this k-mer is specific to one genome
+        self.__specific = None # if k-mer is specific to one genome
 
     def add_position(self, genome: Reference, pos) -> None:
         """The method receives a ref genome and its position, and updates it
          into the kmer's genome pos attribute, and updates specificity."""
-        self.__genome_pos[genome].add(pos) # puts it in the default dict
-        self.update_specificity() # update it anytime we add a pos
+        self.__genome_pos[genome].add(pos)
+        self.update_specificity()
 
     def update_specificity(self) -> None:
-        """This method updates the specificity of a k-mer."""
+        """Updates the specificity status of kmer."""
         self.__specific = len(self.__genome_pos) == 1
 
     def is_specific(self) -> bool:
@@ -84,8 +80,7 @@ class Kmer:
         return list(self.__genome_pos.keys())
 
     def get_positions(self, genome) -> list:
-        """This method returns the positions of this kmer in a genome.
-        It returns an empty list if nothing is found."""
+        """Returns the positions of this kmer in a genome or an empty list."""
         return self.__genome_pos.get(genome, [])
 
 
@@ -100,9 +95,9 @@ class KmerCollection:
         Keys are the sequences (strings) and each value is
         a relevant Kmer instance.
         """
-        self.__kmers = {} # initializes a dictionary
-        self.__genome_index = defaultdict(set) # index for genome lookups
-        self.__genome_order = [] # to retain order in the FASTA file
+        self.__kmers = {}
+        self.__genome_index = defaultdict(set)
+        self.__genome_order = [] # to retain order in the original FASTA file
 
     def add_kmers(self, kmer_seqs, genome, positions) -> None:
         """
@@ -113,13 +108,13 @@ class KmerCollection:
         """
         if (genome not in self.__genome_index and genome
                 not in self.__genome_order):
-            self.__genome_order.append(genome) # to track the genomes order
+            self.__genome_order.append(genome)
         for kmer_seq, position in zip(kmer_seqs, positions):
             if kmer_seq not in self.__kmers:
                 self.__kmers[kmer_seq] = Kmer(kmer_seq)
             kmer = self.__kmers[kmer_seq]
-            kmer.add_position(genome, position) # adding the new pos to dict
-            self.__genome_index[genome].add(kmer_seq) # adding the index
+            kmer.add_position(genome, position)
+            self.__genome_index[genome].add(kmer_seq)
 
     def get_kmer(self, kmer_seq) -> Kmer:
         """This method returns a Kmer instance of a given sequence (string)"""
@@ -127,7 +122,7 @@ class KmerCollection:
 
     def get_all_genomes(self) -> Set[Reference]:
         """This method returns the genomes in which at least 1 kmer appears."""
-        genomes = set() # to avoid repetitiveness
+        genomes = set()
         for kmer in self.__kmers.values():
             genomes.update(kmer.get_genomes())
         return genomes
@@ -137,7 +132,7 @@ class KmerCollection:
         return self.__kmers.values()
 
     def get_kmers_for_genome(self, genome: Reference) -> Set[str]:
-        """This getter method returns all kmers of a genome."""
+        """Returns all k-mer sequences associated with the given genome."""
         return self.__genome_index[genome]
 
     def get_ordered_genomes(self) -> List[Reference]:
