@@ -5,6 +5,8 @@ from kmers import Kmer
 from extcoverage import Coverage
 from extvartrack import VariantTracker
 
+####################         CONSTANTS        ####################
+MAX_MISMATCH_THRESHOLD = 0.1  # 10% maximum allowed error rate
 
 ####################         CLASSES          ####################
 
@@ -155,11 +157,6 @@ class Aligner:
         specific_counts, mapped_genomes, genome_positions =\
             self._count_kmers_with_pos(kmers, k)  # helper func
 
-        if self._variant_tracker and genome_positions:
-            for genome_id, positions in genome_positions.items():
-                if positions:
-                    self._process_variants(read, genome_id, positions)
-
         # Basic algorithm:
         # No specific k-mers -> unmapped
         if not specific_counts:
@@ -200,6 +197,32 @@ class Aligner:
             read.status = 'ambiguous'
             read.mapped_genomes = list(specific_counts.keys())
 
+        verified_genomes = []
+        for genome_id in read.mapped_genomes:
+            positions = genome_positions.get(genome_id, set())
+            if not positions:
+                continue
+            start_pos = list(positions)[0]
+
+            # calculate mismatches (Hamming Distance)
+            mismatches = self._calculate_mismatches(read, genome_id, start_pos)
+
+            # Filter using the CONSTANT
+            if mismatches / len(read.sequence) <= MAX_MISMATCH_THRESHOLD:
+                verified_genomes.append(genome_id)
+                # Only call variants if verified and unique
+                if self._variant_tracker and read.status == 'unique':
+                    self._process_variants(read, genome_id, {start_pos})
+
+        if verified_genomes:
+            read.mapped_genomes = verified_genomes
+        else:
+            # If it failed the Hamming check, mark as unmapped
+            read.status = 'unmapped'
+            read.mapped_genomes = []
+            self._accumulate_status('unmapped', [])
+            return
+
         # update statistics
         self._accumulate_status(read.status, read.mapped_genomes)
 
@@ -222,9 +245,10 @@ class Aligner:
 
         mapped_genomes = {}  # For total k-mer counts
         specific_counts = {}  # For specific k-mer counts
-        genome_positions = defaultdict(set) # default dict with an empty set
+        genome_positions = defaultdict(set)  # default dict with an empty set
 
-        for kmer in kmers:
+        # FIX: Enumerate to get 'i' (the offset of the k-mer in the read)
+        for i, kmer in enumerate(kmers):
             ref_kmer = self._kmer_collection.get_kmer(kmer.sequence)
             if not ref_kmer:
                 continue
@@ -245,8 +269,8 @@ class Aligner:
                 mapped_genomes[genome_id] += 1
 
                 for pos in ref_kmer.get_positions(genome):
-                    # only store start position to save memory
-                    genome_positions[genome_id].add(pos)
+                    genome_positions[genome_id].add(pos - i)
+
         return specific_counts, mapped_genomes, genome_positions
 
     def _accumulate_status(self, status, mapped_genomes: List[str]) -> None:
@@ -335,3 +359,18 @@ class Aligner:
         if self._variant_tracker is None:
             return
         return self._variant_tracker.dump_variants(selected_genomes)
+
+    def _calculate_mismatches(self, read, genome_id, start_pos) -> int:
+        """Helper to calculate Hamming Distance."""
+        genome = None
+        for g in self._kmer_collection.get_all_genomes():
+            if g.identifier == genome_id:
+                genome = g
+                break
+        if not genome:
+            return len(read.sequence)  # max error if genome not found
+
+        end_pos = min(start_pos + len(read.sequence), genome.total_bases)
+        ref_seq = genome.seq[start_pos:end_pos]
+        read_seq = read.sequence[:len(ref_seq)]
+        return sum(1 for r, g in zip(read_seq, ref_seq) if r != g)
