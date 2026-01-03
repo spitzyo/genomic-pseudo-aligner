@@ -226,8 +226,8 @@ def align_task(args):
 
     unique_diff = int(args.unique_threshold) \
         if (is_pos_int(args.unique_threshold)) else 1
-    total_diff = int(args.ambiguous_threhold) \
-        if (is_pos_int(args.ambiguous_threhold)) else 1
+    total_diff = int(args.ambiguous_threshold) \
+        if (is_pos_int(args.ambiguous_threshold)) else 1
     # unique and total diff set to default values if not ints / smaller than 0
 
     aligner = Aligner(kmer_collection)
