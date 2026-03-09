@@ -365,8 +365,8 @@ class Aligner:
 
         read_offset = max(0, -start_pos)   # skip read bases before genome start
         ref_start = max(0, start_pos)
-        end_pos = min(ref_start + len(read.sequence) - read_offset,
-                      genome.total_bases)
-        ref_seq = genome.seq[ref_start:end_pos]
-        read_seq = read.sequence[read_offset:read_offset + len(ref_seq)]
+        overlap_len = min(len(read.sequence) - read_offset,
+                          genome.total_bases - ref_start)
+        ref_seq = genome.seq[ref_start:ref_start + overlap_len]
+        read_seq = read.sequence[read_offset:read_offset + overlap_len]
         return sum(1 for r, g in zip(read_seq, ref_seq) if r != g)

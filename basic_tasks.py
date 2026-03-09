@@ -31,8 +31,6 @@ def create_kmer_details(kmer_collection: KmerCollection) -> Dict:
             genome_id = genome.identifier
             positions = kmer_obj.get_positions(genome)
             if positions:
-                if kmer_seq not in kmer_details:
-                    kmer_details[kmer_seq] = {}
                 kmer_details[kmer_seq][genome_id] = sorted(set(positions))
     return kmer_details
 

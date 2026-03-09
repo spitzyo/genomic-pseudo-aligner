@@ -83,13 +83,13 @@ class VariantTracker:
             return {}
 
         filtered_variants = {}
-        filtered_count = 0
+        below_threshold_count = 0
         for pos, variant in self._variants[genome_id].items():
             if variant.coverage >= self._min_coverage:
                 filtered_variants[pos] = variant
             else:
-                filtered_count += 1
-        self._stats[genome_id]['filtered_variants'] = filtered_count
+                below_threshold_count += 1
+        self._stats[genome_id]['filtered_variants'] = below_threshold_count
         return filtered_variants
 
     def dump_variants(self, selected_genomes=None) -> Dict:
