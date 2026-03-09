@@ -35,9 +35,11 @@ def readargs(args=None):
                         )
     parser.add_argument('-m', '--unique-threshold',
                         help="unique k-mer threshold",
+                        type=int,
                         )
     parser.add_argument('-p', '--ambiguous-threshold',
                         help="ambiguous k-mer threshold",
+                        type=int,
                         )
     parser.add_argument('--min-read-quality',
                         type=int,
