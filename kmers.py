@@ -122,10 +122,7 @@ class KmerCollection:
 
     def get_all_genomes(self) -> Set[Reference]:
         """This method returns the genomes in which at least 1 kmer appears."""
-        genomes = set()
-        for kmer in self._kmers.values():
-            genomes.update(kmer.get_genomes())
-        return genomes
+        return set(self._genome_index.keys())
 
     def get_all_kmers(self):
         """This method returns all the kmer instances."""
