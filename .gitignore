@@ -9,6 +9,10 @@ __pycache__/
 *.fastq
 *.gz
 
+# Allow the integration-test data files to be tracked
+!test_data/reference_genomes.fa
+!test_data/reads.fastq
+
 # Ignore generated output files (we don't want to save these results)
 *.aln
 *.kdb
