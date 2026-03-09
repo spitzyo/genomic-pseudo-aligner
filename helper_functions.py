@@ -91,6 +91,7 @@ def import_fasta(filename) -> List[Reference]:
                     current_id = line[1:].strip()
                     sequence = [] # after creating instance -> inits a new
                 else:
+                    line = line.upper()
                     if all(char in NUCLEO_LETTERS for char in line):
                         sequence.append(line) # only if valid DNA letters
             if current_id and sequence:
@@ -133,6 +134,7 @@ def import_fastq(filename) -> List[Read]:
 
                 if not header.startswith("@") or not plus.startswith("+"):
                     continue  # invalid format
+                sequence = sequence.upper()
                 if not all(char in NUCLEO_LETTERS for char in sequence):
                     continue  # invalid sequence
                 quality_str = [ord(char) - 33 for char in quality.strip()]

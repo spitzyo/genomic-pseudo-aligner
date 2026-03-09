@@ -45,6 +45,23 @@ def test_import_fasta_invalid(tmp_path):
     assert len(references) == 1 # assure only one valid genome was imported
     assert references[0].identifier == "Valid"
 
+def test_import_fasta_lowercase(tmp_path):
+    """Lowercase nucleotides (soft-masked regions) must be uppercased and accepted."""
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Seq1\nacgt\n>Seq2\ntgcaN\n")
+    references = import_fasta(str(fasta_file))
+    assert len(references) == 2
+    assert references[0].seq == "ACGT"
+    assert references[1].seq == "TGCAN"
+
+def test_import_fastq_lowercase(tmp_path):
+    """Lowercase nucleotides in FASTQ reads must be uppercased and accepted."""
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Read1\nacgt\n+\nIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert len(reads) == 1
+    assert reads[0].sequence == "ACGT"
+
 
 def test_save_load_kdb(tmp_path):
     kmer_collection = KmerCollection()
