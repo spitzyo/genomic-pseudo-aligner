@@ -74,6 +74,7 @@ class VariantTracker:
         if position not in self._variants[genome_id]:
             self._variants[genome_id][position] = Variant(position, ref_base,
                                                            alt_base, quality)
+            self._stats[genome_id]['total_variants'] += 1
         self._variants[genome_id][position].update_variant_counts()
 
     def get_variants(self, genome_id) -> Dict[int, Variant]:
@@ -82,13 +83,13 @@ class VariantTracker:
             return {}
 
         filtered_variants = {}
+        filtered_count = 0
         for pos, variant in self._variants[genome_id].items():
-            total_coverage = variant.coverage
-            if total_coverage >= self._min_coverage:
+            if variant.coverage >= self._min_coverage:
                 filtered_variants[pos] = variant
-                self._stats[genome_id]['total_variants'] += 1
             else:
-                self._stats[genome_id]['total_variants'] += 1
+                filtered_count += 1
+        self._stats[genome_id]['filtered_variants'] = filtered_count
         return filtered_variants
 
     def dump_variants(self, selected_genomes=None) -> Dict:
