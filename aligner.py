@@ -326,12 +326,8 @@ class Aligner:
         read_seq = read.sequence
         read_quality = read.quality
 
-        # get the genome instance:
-        genome = None
-        for g in self._kmer_collection.get_all_genomes():
-            if g.identifier == genome_id:
-                genome = g
-                break
+        # get the genome instance in O(1):
+        genome = self._kmer_collection.get_genome_by_id(genome_id)
 
         if not genome or not positions:
             return
@@ -363,11 +359,7 @@ class Aligner:
         """Helper to calculate Hamming Distance.
         Handles negative start_pos (read overhangs the beginning of the genome)
         by aligning only the overlapping portion of read and reference."""
-        genome = None
-        for g in self._kmer_collection.get_all_genomes():
-            if g.identifier == genome_id:
-                genome = g
-                break
+        genome = self._kmer_collection.get_genome_by_id(genome_id)
         if not genome:
             return len(read.sequence)  # max error if genome not found
 

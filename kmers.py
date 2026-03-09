@@ -96,6 +96,7 @@ class KmerCollection:
         self._kmers = {}
         self._genome_index = defaultdict(set)
         self._genome_order = [] # to retain order in the original FASTA file
+        self._genome_lookup = {} # genome_id -> Reference for O(1) lookup
 
     def add_kmers(self, kmer_seqs, genome, positions) -> None:
         """
@@ -107,6 +108,7 @@ class KmerCollection:
         if (genome not in self._genome_index and genome
                 not in self._genome_order):
             self._genome_order.append(genome)
+            self._genome_lookup[genome.identifier] = genome
         for kmer_seq, position in zip(kmer_seqs, positions):
             if kmer_seq not in self._kmers:
                 self._kmers[kmer_seq] = Kmer(kmer_seq)
@@ -135,3 +137,7 @@ class KmerCollection:
 
     def get_ordered_genomes(self) -> List[Reference]:
         return self._genome_order
+
+    def get_genome_by_id(self, genome_id: str):
+        """Returns the Reference object for a given identifier in O(1)."""
+        return self._genome_lookup.get(genome_id)
