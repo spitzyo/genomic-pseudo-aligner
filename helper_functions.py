@@ -79,6 +79,7 @@ def import_fasta(filename) -> List[Reference]:
     def read_fasta_helper():
         current_id = ''
         sequence = []
+        soft_masked_count = 0  # integer counter for lowercase (soft-masked) bases
         with open_gz_file(filename, "r") as f:
             for line in f:
                 line = line.strip()
@@ -86,17 +87,33 @@ def import_fasta(filename) -> List[Reference]:
                     if current_id and sequence: # if valid
                         sequence = ''.join(sequence)
                         if sequence:
-                            yield Reference(current_id, sequence)
+                            yield Reference(current_id, sequence,
+                                            soft_masked_count)
                             # only if something was added -> create Ref inst
                     current_id = line[1:].strip()
                     sequence = [] # after creating instance -> inits a new
+                    soft_masked_count = 0
                 else:
-                    if all(char in NUCLEO_LETTERS for char in line):
-                        sequence.append(line) # only if valid DNA letters
-            if current_id and sequence:
-                sequence = ''.join(sequence) #last
-                if sequence:
-                    yield Reference(current_id, sequence)
+                    # Single pass: validate characters and count lowercase
+                    # (soft-masked) bases simultaneously.
+                    valid = True
+                    line_upper_chars = []
+                    local_masked_count = 0
+                    for ch in line:
+                        upper_ch = ch.upper()
+                        if upper_ch not in NUCLEO_LETTERS:
+                            valid = False
+                            break
+                        line_upper_chars.append(upper_ch)
+                        if ch.islower():
+                            local_masked_count += 1
+                    if valid and line_upper_chars:
+                        soft_masked_count += local_masked_count
+                        sequence.append(''.join(line_upper_chars))
+        if current_id and sequence:
+            sequence = ''.join(sequence) #last
+            if sequence:
+                yield Reference(current_id, sequence, soft_masked_count)
     return list(read_fasta_helper())
 
 @handle_f_read("loading reference databases")
@@ -133,6 +150,7 @@ def import_fastq(filename) -> List[Read]:
 
                 if not header.startswith("@") or not plus.startswith("+"):
                     continue  # invalid format
+                sequence = sequence.upper()
                 if not all(char in NUCLEO_LETTERS for char in sequence):
                     continue  # invalid sequence
                 quality_str = [ord(char) - 33 for char in quality.strip()]

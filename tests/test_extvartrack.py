@@ -41,3 +41,18 @@ def test_coverage_filter():
     variantracker.add_direct_variant("sample1", 7, "T", "C", 40)
     variantracker.add_direct_variant("sample1", 7, "T", "C", 40)
     assert len(variantracker.get_variants("sample1")) == 1 # only one should be
+
+def test_variant_stats_no_double_count():
+    """Calling get_variants() multiple times must not inflate total_variants."""
+    vt = VariantTracker(min_cov=1)
+    vt.add_direct_variant("g1", 5, "A", "T", 30)
+    vt.add_direct_variant("g1", 6, "C", "G", 30)
+
+    # Call get_variants() twice; total_variants should remain 2 each time
+    vt.get_variants("g1")
+    stats = vt._stats["g1"]
+    assert stats["total_variants"] == 2
+
+    vt.get_variants("g1")
+    stats = vt._stats["g1"]
+    assert stats["total_variants"] == 2

@@ -13,16 +13,28 @@ class Reference:
     and positions and the genome length.
     """
 
-    def __init__(self, identifier: str, sequence: str):
+    def __init__(self, identifier: str, sequence: str,
+                 soft_masked_count: int = 0):
         """
         Initialize a Reference genome object.
         :param identifier: a unique identifier for the reference genome.
         :param sequence: the DNA sequence of the reference genome (string).
+        :param soft_masked_count: number of bases that were originally
+               lowercase (soft-masked) in the source FASTA file.
         """
         self.identifier = identifier
         self.seq = sequence
         self._ref_kmers = {} # dict to hold kmers and their positions
         self.total_bases = len(sequence)
+        # Soft-masking: count of bases that were lowercase in the source FASTA.
+        # Lowercase = soft-masked (e.g. repetitive or low-complexity regions).
+        self.soft_masked_count: int = soft_masked_count
+
+    @property
+    def soft_masked_fraction(self) -> float:
+        """Fraction of bases that are soft-masked (0.0 – 1.0)."""
+        count = getattr(self, 'soft_masked_count', 0)  # safe for old pickles
+        return count / self.total_bases if self.total_bases > 0 else 0.0
 
     def add_ref_kmers(self, k, kmer_collection) -> None:
         """
@@ -96,6 +108,7 @@ class KmerCollection:
         self._kmers = {}
         self._genome_index = defaultdict(set)
         self._genome_order = [] # to retain order in the original FASTA file
+        self._genome_lookup = {} # genome_id -> Reference for O(1) lookup
 
     def add_kmers(self, kmer_seqs, genome, positions) -> None:
         """
@@ -107,6 +120,7 @@ class KmerCollection:
         if (genome not in self._genome_index and genome
                 not in self._genome_order):
             self._genome_order.append(genome)
+            self._genome_lookup[genome.identifier] = genome
         for kmer_seq, position in zip(kmer_seqs, positions):
             if kmer_seq not in self._kmers:
                 self._kmers[kmer_seq] = Kmer(kmer_seq)
@@ -120,10 +134,7 @@ class KmerCollection:
 
     def get_all_genomes(self) -> Set[Reference]:
         """This method returns the genomes in which at least 1 kmer appears."""
-        genomes = set()
-        for kmer in self._kmers.values():
-            genomes.update(kmer.get_genomes())
-        return genomes
+        return set(self._genome_index.keys())
 
     def get_all_kmers(self):
         """This method returns all the kmer instances."""
@@ -135,3 +146,7 @@ class KmerCollection:
 
     def get_ordered_genomes(self) -> List[Reference]:
         return self._genome_order
+
+    def get_genome_by_id(self, genome_id: str):
+        """Returns the Reference object for a given identifier in O(1)."""
+        return self._genome_lookup.get(genome_id)

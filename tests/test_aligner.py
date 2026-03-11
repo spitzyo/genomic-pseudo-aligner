@@ -55,3 +55,16 @@ def test_read_quality():
     read = Read("test_id", "ACGTACGT", [20, 25, 30, 35, 20, 25, 30, 35])
     assert read.get_mean_quality() > 0
     assert read.get_kmer_quality(0, 4) > 0
+
+def test_get_kmers_returns_positions():
+    """get_kmers() must return the actual read offset in each tuple so that
+    position tracking is correct even when some k-mers are filtered out."""
+    # 'N' at position 1 causes the k-mer at offset 1 to be dropped.
+    # The surviving k-mer at offset 2 must carry offset=2, not index=1.
+    read = Read("r", "ACNGT", [40]*5)
+    kmers = read.get_kmers(k=2)
+    offsets = [offset for offset, _ in kmers]
+    seqs = [seq for _, seq in kmers]
+    # AC (offset 0) is kept; CN/NG are dropped; GT (offset 3) is kept
+    assert offsets == [0, 3]
+    assert seqs == ["AC", "GT"]

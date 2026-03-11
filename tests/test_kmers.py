@@ -10,6 +10,25 @@ def test_reference_getters():
     assert reference.seq == "ACGTACGT"
     assert reference.total_bases == 8
 
+def test_reference_masked_bases_default():
+    """Reference created without soft_masked_count must default to 0."""
+    ref = Reference("g1", "ACGT")
+    assert ref.soft_masked_count == 0
+    assert isinstance(ref.soft_masked_count, int)
+    assert ref.soft_masked_fraction == 0.0
+
+def test_reference_masked_bases_partial():
+    """Passing soft_masked_count populates the attribute and fraction property."""
+    ref = Reference("g1", "ACGT", soft_masked_count=2)
+    assert ref.soft_masked_count == 2
+    assert isinstance(ref.soft_masked_count, int)
+    assert ref.soft_masked_fraction == 0.5   # 2 out of 4 bases
+
+def test_reference_fully_masked():
+    """100 % soft-masked reference must report fraction = 1.0."""
+    ref = Reference("g1", "ACGT", soft_masked_count=4)
+    assert ref.soft_masked_fraction == 1.0
+
 def test_reference_add_kmers():
     reference = Reference("genome1", "ACGTACGT")
     collection = KmerCollection()

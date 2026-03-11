@@ -45,6 +45,46 @@ def test_import_fasta_invalid(tmp_path):
     assert len(references) == 1 # assure only one valid genome was imported
     assert references[0].identifier == "Valid"
 
+def test_import_fasta_lowercase(tmp_path):
+    """Lowercase nucleotides (soft-masked regions) must be uppercased and accepted,
+    and their count recorded in soft_masked_count."""
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Seq1\nacgt\n>Seq2\ntgcaN\n")
+    references = import_fasta(str(fasta_file))
+    assert len(references) == 2
+    assert references[0].seq == "ACGT"
+    assert references[1].seq == "TGCAN"
+    # All 4 bases of Seq1 are lowercase → count = 4
+    assert references[0].soft_masked_count == 4
+    # Seq2 "tgcaN": t,g,c,a are lowercase (4); N is uppercase
+    assert references[1].soft_masked_count == 4
+
+def test_import_fasta_masking_multiline(tmp_path):
+    """soft_masked_count must accumulate correctly across multi-line FASTA sequences."""
+    # Line 1: "ACgt" → 2 lowercase chars
+    # Line 2: "aTGC" → 1 lowercase char
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Genome\nACgt\naTGC\n")
+    refs = import_fasta(str(fasta_file))
+    assert len(refs) == 1
+    assert refs[0].seq == "ACGTATGC"
+    assert refs[0].soft_masked_count == 3  # 'g','t','a'
+
+def test_import_fasta_no_masking(tmp_path):
+    """A fully uppercase FASTA must produce soft_masked_count = 0."""
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Seq1\nACGT\n")
+    refs = import_fasta(str(fasta_file))
+    assert refs[0].soft_masked_count == 0
+
+def test_import_fastq_lowercase(tmp_path):
+    """Lowercase nucleotides in FASTQ reads must be uppercased and accepted."""
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Read1\nacgt\n+\nIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert len(reads) == 1
+    assert reads[0].sequence == "ACGT"
+
 
 def test_save_load_kdb(tmp_path):
     kmer_collection = KmerCollection()
