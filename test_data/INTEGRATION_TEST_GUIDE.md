@@ -194,9 +194,7 @@ python main.py \
         "unique_mapped_reads": 215,
         "ambiguous_mapped_reads": 0,
         "unmapped_reads": 30,
-        "total_read_bases": 36750,
-        "soft_masked_read_bases": 0,
-        "soft_masked_read_fraction": 0.0
+        "total_read_bases": 36750
     },
     "Summary": {
         "ecoli_K12": {
@@ -223,8 +221,6 @@ python main.py \
 | `ambiguous_mapped_reads` | **0** | No k-mer is shared between species (confirmed in Step 2) |
 | `unmapped_reads` | **30** | All Cat D random reads |
 | `total_read_bases` | **36,750** | 245 reads × 150 bp |
-| `soft_masked_read_bases` | **0** | All reads in the test file are fully uppercase |
-| `soft_masked_read_fraction` | **0.0** | No soft-masking in the test reads |
 | `ecoli_K12 unique_reads` | **95** | Cat A (80 regular) + Cat E (15 SNP) |
 | `salmonella_LT2 unique_reads` | **80** | Exactly Cat B |
 | `bacillus_subtilis_168 unique_reads` | **40** | Exactly Cat C |
@@ -234,11 +230,6 @@ unmapped reads correspond exactly to the synthetic random reads inserted to
 simulate sequencing noise / contamination. The relative read counts
 (95 : 80 : 40) reflect the sequencing depth assigned to each species, which
 in a real experiment would indicate their relative abundance in the sample.
-
-The `soft_masked_read_fraction` field tells you what fraction of all read bases
-originated from soft-masked (lowercase, typically repetitive or low-complexity)
-regions in the source FASTQ. A high value could indicate that many reads come
-from repeat regions, which are harder to align uniquely.
 
 ---
 
@@ -281,46 +272,8 @@ python main.py -t dumpref -g /tmp/repeat_genome.fa -k 4 2>&1 \
 - Importantly, **all k-mers are still indexed and used for alignment** —
   the masking information is purely statistical. This is consistent with the
   pseudo-aligner convention: sequence content from soft-masked regions is
-  retained but flagged so users can assess how much of their mapping comes
-  from repetitive sequence.
-
-To see soft-masking stats for reads, pass a FASTQ with lowercase bases:
-
-```bash
-cat > /tmp/masked_reads.fq << 'EOF'
-@from_repeat_element
-acgtACGT
-+
-IIIIIIII
-@normal_read
-ACGTACGT
-+
-IIIIIIII
-EOF
-
-python main.py -t dumpalign \
-  -g /tmp/repeat_genome.fa -k 4 \
-  --reads /tmp/masked_reads.fq 2>&1
-```
-
-**Expected output:**
-```json
-{
-    "Statistics": {
-        "unique_mapped_reads": 0,
-        "ambiguous_mapped_reads": 0,
-        "unmapped_reads": 2,
-        "total_read_bases": 16,
-        "soft_masked_read_bases": 4,
-        "soft_masked_read_fraction": 0.25
-    },
-    "Summary": {}
-}
-```
-
-`soft_masked_read_fraction = 0.25` (4 soft-masked bases out of 16 total)
-shows that 25 % of the sequenced bases came from regions flagged as repetitive
-in the read data — useful for downstream quality control.
+  retained but flagged so users can assess how much of their reference
+  comes from repetitive sequence.
 
 ---
 
@@ -547,9 +500,9 @@ After completing all steps, check the following:
 
 - [ ] `bacteria.kdb` created (~360–380 KB)
 - [ ] `dumpref` reports 0 `multi_mapping_kmers` for every genome
-- [ ] `dumpref` includes `soft_masked_bases` and `soft_masked_fraction` fields (0 for these uppercase test genomes)
+- [ ] `dumpref` includes `soft_masked_bases` (integer) and `soft_masked_fraction` fields (0 for these uppercase test genomes)
 - [ ] `dumpalign` from `.aln` file shows **215 unique, 0 ambiguous, 30 unmapped**
-- [ ] `dumpalign` Statistics includes `total_read_bases = 36750`, `soft_masked_read_bases = 0`, `soft_masked_read_fraction = 0.0`
+- [ ] `dumpalign` Statistics includes `total_read_bases = 36750`
 - [ ] `ecoli_K12` has **95** unique reads, `salmonella_LT2` **80**, `bacillus_subtilis_168` **40**
 - [ ] `--coverage` reports non-zero `covered_bases_unique` for all three genomes
 - [ ] `--detect-variants` reports exactly **one variant** at `ecoli_K12` position `2000` (G→A, coverage 15)

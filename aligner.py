@@ -16,16 +16,13 @@ class Read:
     status of every read, and the genomes that it was mapped to (if any).
     """
 
-    def __init__(self, identifier, sequence, quality_str, status="unmapped",
-                 soft_masked_positions=None):
+    def __init__(self, identifier, sequence, quality_str, status="unmapped"):
         """
         Initialize a Read object.
         :param identifier: as given in the header of the input file.
         :param sequence: a full DNA sequence.
         :param quality_str: converted by the Phred33 format.
         :param status: the status of the read (default is "unmapped").
-        :param soft_masked_positions: set of 0-based read positions that were
-               originally lowercase in the source FASTQ file (soft-masked).
         """
         self.identifier = identifier
         self.sequence = sequence
@@ -34,10 +31,6 @@ class Read:
         # Status (unmapped/ambiguous/unique) would be decided upon execution:
         self.status = status
         self.mapped_genomes = [] # list of mapped Reference's identifiers
-        # Soft-masking: positions that were lowercase in the source FASTQ.
-        self.soft_masked_positions: set = (soft_masked_positions
-                                           if soft_masked_positions is not None
-                                           else set())
 
     def get_mean_quality(self) -> float:
         """This method returns the mean (ave) quality value for the read."""

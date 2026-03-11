@@ -61,8 +61,7 @@ def create_genome_summary(kmer_collection: KmerCollection) -> Dict:
                 multi_map_kmers += 1
 
         # Soft-masking statistics (graceful fallback for old .kdb files)
-        masked = getattr(genome, 'masked_bases', set())
-        soft_masked_count = len(masked)
+        soft_masked_count = getattr(genome, 'soft_masked_count', 0)
         soft_masked_frac = _safe_fraction(soft_masked_count, base_length)
 
         genome_summary[genome_id] = {
@@ -131,7 +130,6 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         })
 
     total_read_bases = 0
-    soft_masked_read_bases = 0
 
     for read in reads:
         status = read.status
@@ -144,11 +142,7 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         elif status == 'unmapped':
             reads_stats['unmapped_reads'] += 1
 
-        # Accumulate soft-masking statistics across all reads.
-        # Use getattr for backward-compat with .aln files from old versions.
         total_read_bases += len(read.sequence)
-        soft_masked_read_bases += len(
-            getattr(read, 'soft_masked_positions', set()))
 
         for genome in mapped_genomes:
             if genome not in genome_mapping_summary:
@@ -159,11 +153,8 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
             elif status == 'ambiguous':
                 genome_mapping_summary[genome]['ambiguous_reads'] += 1
 
-    # Add read soft-masking stats to the Statistics section.
+    # Add total_read_bases to the Statistics section.
     reads_stats['total_read_bases'] = total_read_bases
-    reads_stats['soft_masked_read_bases'] = soft_masked_read_bases
-    reads_stats['soft_masked_read_fraction'] = _safe_fraction(
-        soft_masked_read_bases, total_read_bases)
 
     # ensuring all genomes, even unmapped ones, while preserving the order
     if alignment_summary:
