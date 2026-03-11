@@ -127,17 +127,23 @@ print('Total k-mers:', len(data['Kmers']))
         "ecoli_K12": {
             "total_bases": 10000,
             "unique_kmers": 9970,
-            "multi_mapping_kmers": 0
+            "multi_mapping_kmers": 0,
+            "soft_masked_bases": 0,
+            "soft_masked_fraction": 0.0
         },
         "salmonella_LT2": {
             "total_bases": 10200,
             "unique_kmers": 10170,
-            "multi_mapping_kmers": 0
+            "multi_mapping_kmers": 0,
+            "soft_masked_bases": 0,
+            "soft_masked_fraction": 0.0
         },
         "bacillus_subtilis_168": {
             "total_bases": 9800,
             "unique_kmers": 9770,
-            "multi_mapping_kmers": 0
+            "multi_mapping_kmers": 0,
+            "soft_masked_bases": 0,
+            "soft_masked_fraction": 0.0
         }
     }
 }
@@ -151,6 +157,10 @@ Total k-mers: 29910
   ones that would extend beyond the sequence end.
 - `multi_mapping_kmers` = 0 for every genome confirms that no 31-mer is shared
   between species — each read will map to exactly one reference, or not at all.
+- `soft_masked_bases = 0` and `soft_masked_fraction = 0.0` for all three genomes
+  because the synthetic reference sequences are fully uppercase. When working
+  with a real genome downloaded from Ensembl or NCBI, soft-masked (repeat)
+  regions will be in lowercase, and these fields will be non-zero.
 
 ---
 
@@ -183,7 +193,10 @@ python main.py \
     "Statistics": {
         "unique_mapped_reads": 215,
         "ambiguous_mapped_reads": 0,
-        "unmapped_reads": 30
+        "unmapped_reads": 30,
+        "total_read_bases": 36750,
+        "soft_masked_read_bases": 0,
+        "soft_masked_read_fraction": 0.0
     },
     "Summary": {
         "ecoli_K12": {
@@ -209,6 +222,9 @@ python main.py \
 | `unique_mapped_reads` | **215** | Cat A (80) + Cat B (80) + Cat C (40) + Cat E (15) |
 | `ambiguous_mapped_reads` | **0** | No k-mer is shared between species (confirmed in Step 2) |
 | `unmapped_reads` | **30** | All Cat D random reads |
+| `total_read_bases` | **36,750** | 245 reads × 150 bp |
+| `soft_masked_read_bases` | **0** | All reads in the test file are fully uppercase |
+| `soft_masked_read_fraction` | **0.0** | No soft-masking in the test reads |
 | `ecoli_K12 unique_reads` | **95** | Cat A (80 regular) + Cat E (15 SNP) |
 | `salmonella_LT2 unique_reads` | **80** | Exactly Cat B |
 | `bacillus_subtilis_168 unique_reads` | **40** | Exactly Cat C |
@@ -219,9 +235,96 @@ simulate sequencing noise / contamination. The relative read counts
 (95 : 80 : 40) reflect the sequencing depth assigned to each species, which
 in a real experiment would indicate their relative abundance in the sample.
 
+The `soft_masked_read_fraction` field tells you what fraction of all read bases
+originated from soft-masked (lowercase, typically repetitive or low-complexity)
+regions in the source FASTQ. A high value could indicate that many reads come
+from repeat regions, which are harder to align uniquely.
+
 ---
 
-## Step 5 — Coverage analysis
+## Step 5 — Soft-masking statistics (real-world reference)
+
+The test genomes are fully uppercase, but real Ensembl/NCBI genomes contain
+soft-masked regions (lowercase = repeat elements). To see the masking stats,
+create a small example file with soft-masking:
+
+```bash
+cat > /tmp/repeat_genome.fa << 'EOF'
+>chr1_with_repeats
+ACGTacgtacgtACGTACGT
+EOF
+
+python main.py -t dumpref -g /tmp/repeat_genome.fa -k 4 2>&1 \
+  | python -c "import sys,json; d=json.load(sys.stdin); print(json.dumps({'Summary':d['Summary']},indent=4))"
+```
+
+**Expected output:**
+```json
+{
+    "Summary": {
+        "chr1_with_repeats": {
+            "total_bases": 20,
+            "unique_kmers": 0,
+            "multi_mapping_kmers": 4,
+            "soft_masked_bases": 8,
+            "soft_masked_fraction": 0.4
+        }
+    }
+}
+```
+
+**Interpretation:**  
+- `soft_masked_bases = 8`: the 8 lowercase characters (`acgtacgt`) were
+  flagged as soft-masked by an upstream tool such as RepeatMasker.  
+- `soft_masked_fraction = 0.4`: 40 % of this genome is in a repeat/low-
+  complexity region.  
+- Importantly, **all k-mers are still indexed and used for alignment** —
+  the masking information is purely statistical. This is consistent with the
+  pseudo-aligner convention: sequence content from soft-masked regions is
+  retained but flagged so users can assess how much of their mapping comes
+  from repetitive sequence.
+
+To see soft-masking stats for reads, pass a FASTQ with lowercase bases:
+
+```bash
+cat > /tmp/masked_reads.fq << 'EOF'
+@from_repeat_element
+acgtACGT
++
+IIIIIIII
+@normal_read
+ACGTACGT
++
+IIIIIIII
+EOF
+
+python main.py -t dumpalign \
+  -g /tmp/repeat_genome.fa -k 4 \
+  --reads /tmp/masked_reads.fq 2>&1
+```
+
+**Expected output:**
+```json
+{
+    "Statistics": {
+        "unique_mapped_reads": 0,
+        "ambiguous_mapped_reads": 0,
+        "unmapped_reads": 2,
+        "total_read_bases": 16,
+        "soft_masked_read_bases": 4,
+        "soft_masked_read_fraction": 0.25
+    },
+    "Summary": {}
+}
+```
+
+`soft_masked_read_fraction = 0.25` (4 soft-masked bases out of 16 total)
+shows that 25 % of the sequenced bases came from regions flagged as repetitive
+in the read data — useful for downstream quality control.
+
+---
+
+## Step 6 — Coverage analysis
 
 Run alignment and coverage in a single command (no `.aln` file needed):
 
@@ -444,8 +547,11 @@ After completing all steps, check the following:
 
 - [ ] `bacteria.kdb` created (~360–380 KB)
 - [ ] `dumpref` reports 0 `multi_mapping_kmers` for every genome
+- [ ] `dumpref` includes `soft_masked_bases` and `soft_masked_fraction` fields (0 for these uppercase test genomes)
 - [ ] `dumpalign` from `.aln` file shows **215 unique, 0 ambiguous, 30 unmapped**
+- [ ] `dumpalign` Statistics includes `total_read_bases = 36750`, `soft_masked_read_bases = 0`, `soft_masked_read_fraction = 0.0`
 - [ ] `ecoli_K12` has **95** unique reads, `salmonella_LT2` **80**, `bacillus_subtilis_168` **40**
 - [ ] `--coverage` reports non-zero `covered_bases_unique` for all three genomes
 - [ ] `--detect-variants` reports exactly **one variant** at `ecoli_K12` position `2000` (G→A, coverage 15)
 - [ ] Increasing `--unique-threshold` shifts reads from unique → ambiguous
+- [ ] A FASTA with lowercase bases (Step 5) shows correct non-zero `soft_masked_bases` and `soft_masked_fraction`

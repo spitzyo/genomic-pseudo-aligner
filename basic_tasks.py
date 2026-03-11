@@ -10,6 +10,14 @@ from helper_functions import (load_kdb_file, import_fasta,
                               import_fastq, get_kmer_size_from_collection,
                               handle_f_write, handle_f_read)
 
+####################           Helpers             ####################
+
+def _safe_fraction(numerator: int, denominator: int,
+                   decimals: int = 4) -> float:
+    """Returns numerator/denominator rounded to *decimals* places,
+    or 0.0 when the denominator is zero."""
+    return round(numerator / denominator, decimals) if denominator > 0 else 0.0
+
 ####################      REFERENCE + DUMPREF     ####################
 
 def build_reference(filename: str, k: int,
@@ -51,9 +59,19 @@ def create_genome_summary(kmer_collection: KmerCollection) -> Dict:
                 unique_kmers += 1
             else:
                 multi_map_kmers += 1
-        genome_summary[genome_id] = {"total_bases": base_length,
-                                     "unique_kmers": unique_kmers,
-                                     "multi_mapping_kmers": multi_map_kmers}
+
+        # Soft-masking statistics (graceful fallback for old .kdb files)
+        masked = getattr(genome, 'masked_bases', set())
+        soft_masked_count = len(masked)
+        soft_masked_frac = _safe_fraction(soft_masked_count, base_length)
+
+        genome_summary[genome_id] = {
+            "total_bases": base_length,
+            "unique_kmers": unique_kmers,
+            "multi_mapping_kmers": multi_map_kmers,
+            "soft_masked_bases": soft_masked_count,
+            "soft_masked_fraction": soft_masked_frac,
+        }
     return genome_summary
 
 @handle_f_write("writing reference dump")
@@ -112,6 +130,9 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
             'filtered_hr_kmers': quality_stats.get('filtered_hr_kmers', 0)
         })
 
+    total_read_bases = 0
+    soft_masked_read_bases = 0
+
     for read in reads:
         status = read.status
         mapped_genomes = read.mapped_genomes
@@ -123,6 +144,12 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         elif status == 'unmapped':
             reads_stats['unmapped_reads'] += 1
 
+        # Accumulate soft-masking statistics across all reads.
+        # Use getattr for backward-compat with .aln files from old versions.
+        total_read_bases += len(read.sequence)
+        soft_masked_read_bases += len(
+            getattr(read, 'soft_masked_positions', set()))
+
         for genome in mapped_genomes:
             if genome not in genome_mapping_summary:
                 genome_mapping_summary[genome] = {'unique_reads': 0,
@@ -131,6 +158,12 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
                 genome_mapping_summary[genome]['unique_reads'] += 1
             elif status == 'ambiguous':
                 genome_mapping_summary[genome]['ambiguous_reads'] += 1
+
+    # Add read soft-masking stats to the Statistics section.
+    reads_stats['total_read_bases'] = total_read_bases
+    reads_stats['soft_masked_read_bases'] = soft_masked_read_bases
+    reads_stats['soft_masked_read_fraction'] = _safe_fraction(
+        soft_masked_read_bases, total_read_bases)
 
     # ensuring all genomes, even unmapped ones, while preserving the order
     if alignment_summary:

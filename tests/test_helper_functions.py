@@ -46,21 +46,62 @@ def test_import_fasta_invalid(tmp_path):
     assert references[0].identifier == "Valid"
 
 def test_import_fasta_lowercase(tmp_path):
-    """Lowercase nucleotides (soft-masked regions) must be uppercased and accepted."""
+    """Lowercase nucleotides (soft-masked regions) must be uppercased and accepted,
+    and their positions recorded in masked_bases."""
     fasta_file = tmp_path / "test.fa"
     fasta_file.write_text(">Seq1\nacgt\n>Seq2\ntgcaN\n")
     references = import_fasta(str(fasta_file))
     assert len(references) == 2
     assert references[0].seq == "ACGT"
     assert references[1].seq == "TGCAN"
+    # All 4 bases of Seq1 are lowercase → all 4 positions masked
+    assert references[0].masked_bases == {0, 1, 2, 3}
+    # Seq2 "tgcaN": t(0),g(1),c(2),a(3) are lowercase; N(4) is uppercase
+    assert references[1].masked_bases == {0, 1, 2, 3}
+
+def test_import_fasta_masking_multiline(tmp_path):
+    """Masked positions must be tracked across multi-line FASTA sequences."""
+    # Line 1: "ACgt" → positions 2,3 are lowercase
+    # Line 2: "aTGC" → position 0 (= global pos 4) is lowercase
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Genome\nACgt\naTGC\n")
+    refs = import_fasta(str(fasta_file))
+    assert len(refs) == 1
+    assert refs[0].seq == "ACGTATGC"
+    assert refs[0].masked_bases == {2, 3, 4}
+
+def test_import_fasta_no_masking(tmp_path):
+    """A fully uppercase FASTA must produce an empty masked_bases set."""
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Seq1\nACGT\n")
+    refs = import_fasta(str(fasta_file))
+    assert refs[0].masked_bases == set()
 
 def test_import_fastq_lowercase(tmp_path):
-    """Lowercase nucleotides in FASTQ reads must be uppercased and accepted."""
+    """Lowercase nucleotides in FASTQ reads must be uppercased and accepted,
+    and their positions recorded in soft_masked_positions."""
     fastq_file = tmp_path / "test.fq"
     fastq_file.write_text("@Read1\nacgt\n+\nIIII\n")
     reads = import_fastq(str(fastq_file))
     assert len(reads) == 1
     assert reads[0].sequence == "ACGT"
+    assert reads[0].soft_masked_positions == {0, 1, 2, 3}
+
+def test_import_fastq_partial_masking(tmp_path):
+    """Only the originally-lowercase positions must be in soft_masked_positions."""
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Read1\nAcGt\n+\nIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert reads[0].sequence == "ACGT"
+    # positions 1 ('c') and 3 ('t') were lowercase
+    assert reads[0].soft_masked_positions == {1, 3}
+
+def test_import_fastq_no_masking(tmp_path):
+    """A fully uppercase FASTQ read must have an empty soft_masked_positions set."""
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Read1\nACGT\n+\nIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert reads[0].soft_masked_positions == set()
 
 
 def test_save_load_kdb(tmp_path):

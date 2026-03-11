@@ -1,6 +1,6 @@
 ####################         IMPORTS          ####################
 from collections import defaultdict
-from typing import List, Set
+from typing import List, Set, Optional
 
 
 ####################         CLASSES          ####################
@@ -13,16 +13,29 @@ class Reference:
     and positions and the genome length.
     """
 
-    def __init__(self, identifier: str, sequence: str):
+    def __init__(self, identifier: str, sequence: str,
+                 masked_bases: Optional[Set[int]] = None):
         """
         Initialize a Reference genome object.
         :param identifier: a unique identifier for the reference genome.
         :param sequence: the DNA sequence of the reference genome (string).
+        :param masked_bases: set of 0-based positions that were originally
+               lowercase (soft-masked) in the source FASTA file.
         """
         self.identifier = identifier
         self.seq = sequence
         self._ref_kmers = {} # dict to hold kmers and their positions
         self.total_bases = len(sequence)
+        # Soft-masking: positions that were lowercase in the source FASTA.
+        # Lowercase = soft-masked (e.g. repetitive or low-complexity regions).
+        self.masked_bases: Set[int] = masked_bases if masked_bases is not None \
+            else set()
+
+    @property
+    def soft_masked_fraction(self) -> float:
+        """Fraction of bases that are soft-masked (0.0 – 1.0)."""
+        masked = getattr(self, 'masked_bases', set())  # safe for old pickles
+        return len(masked) / self.total_bases if self.total_bases > 0 else 0.0
 
     def add_ref_kmers(self, k, kmer_collection) -> None:
         """

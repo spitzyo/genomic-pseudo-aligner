@@ -47,9 +47,60 @@ def test_create_genome_summary():
     assert summary["genome1"]["unique_kmers"] == 1 # only GCT is unique
     assert summary["genome2"]["unique_kmers"] == 1  # only AAC is unique
     assert summary["genome2"]["multi_mapping_kmers"] == 1 # "ACG" is shared
+    # No soft-masking info was set on these References → expect zero values
+    assert summary["genome1"]["soft_masked_bases"] == 0
+    assert summary["genome1"]["soft_masked_fraction"] == 0.0
+
+def test_create_genome_summary_with_masking():
+    """Genome summary must reflect soft_masked_bases when present."""
+    # 2 out of 8 bases are soft-masked (positions 0 and 1)
+    ref = Reference("masked_genome", "ACGTACGT", masked_bases={0, 1})
+    collection = KmerCollection()
+    collection.add_kmers(["ACG"], ref, [0])
+    summary = create_genome_summary(collection)
+    assert summary["masked_genome"]["soft_masked_bases"] == 2
+    assert summary["masked_genome"]["soft_masked_fraction"] == 0.25
 
 
-def test_reference_task(tmp_path):
+def test_dump_alignment(tmp_path):
+    read = Read("test_read", "ACGT", "FFFF")
+    read.status = "unique"
+    read.mapped_genomes = ["genome1"]
+    output_file = tmp_path / "alignment_dump.json"
+    dump_alignment(reads=[read], output_file=str(output_file))
+    assert os.path.exists(output_file) # just check if the file is created
+
+
+def test_dump_alignment_soft_masking_stats(tmp_path):
+    """dump_alignment must report total_read_bases and soft-masking fractions."""
+    import json
+    # Read with 2 out of 4 bases soft-masked
+    r1 = Read("r1", "ACGT", [40, 40, 40, 40],
+              soft_masked_positions={0, 1})
+    r1.status = "unique"
+    r1.mapped_genomes = ["g1"]
+    # Read with no soft-masking
+    r2 = Read("r2", "TGCA", [40, 40, 40, 40])
+    r2.status = "unmapped"
+    output_file = tmp_path / "dump.json"
+    dump_alignment(reads=[r1, r2], output_file=str(output_file))
+    with open(output_file) as fh:
+        result = json.load(fh)
+    stats = result["Statistics"]
+    assert stats["total_read_bases"] == 8        # 4 + 4
+    assert stats["soft_masked_read_bases"] == 2  # only r1 had masking
+    assert stats["soft_masked_read_fraction"] == 0.25  # 2 / 8
+
+
+def test_dump_alignment_with_aligner(tmp_path):
+    read = Read("test_read", "ACGT", "FFFF")
+    read.status = "unique"
+    read.mapped_genomes = ["genome1"]
+    collection = KmerCollection()
+    aligner = Aligner(collection)
+    output_file = tmp_path / "alignment_dump.json"
+    dump_alignment(reads=[read], aligner=aligner, output_file=str(output_file))
+    assert os.path.exists(output_file) # same here, check if file exists
     fasta_file = tmp_path / "test.fa"
     fasta_file.write_text(">Seq1\nACGTACGT\n")
     kdb_file = tmp_path / "test.kdb"

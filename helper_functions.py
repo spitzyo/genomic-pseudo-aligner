@@ -2,7 +2,7 @@
 import functools
 import gzip
 import pickle
-from typing import List, Callable
+from typing import List, Callable, Set
 from aligner import Read
 from kmers import Reference, KmerCollection
 import sys
@@ -79,6 +79,8 @@ def import_fasta(filename) -> List[Reference]:
     def read_fasta_helper():
         current_id = ''
         sequence = []
+        masked_positions: Set[int] = set()
+        current_len = 0  # running character count for multi-line sequences
         with open_gz_file(filename, "r") as f:
             for line in f:
                 line = line.strip()
@@ -86,18 +88,35 @@ def import_fasta(filename) -> List[Reference]:
                     if current_id and sequence: # if valid
                         sequence = ''.join(sequence)
                         if sequence:
-                            yield Reference(current_id, sequence)
+                            yield Reference(current_id, sequence,
+                                            masked_positions)
                             # only if something was added -> create Ref inst
                     current_id = line[1:].strip()
                     sequence = [] # after creating instance -> inits a new
+                    masked_positions = set()
+                    current_len = 0
                 else:
-                    line = line.upper()
-                    if all(char in NUCLEO_LETTERS for char in line):
-                        sequence.append(line) # only if valid DNA letters
-            if current_id and sequence:
-                sequence = ''.join(sequence) #last
-                if sequence:
-                    yield Reference(current_id, sequence)
+                    # Single pass: validate characters and record lowercase
+                    # positions simultaneously, avoiding a double iteration.
+                    valid = True
+                    line_upper_chars = []
+                    local_masked = []
+                    for j, ch in enumerate(line):
+                        upper_ch = ch.upper()
+                        if upper_ch not in NUCLEO_LETTERS:
+                            valid = False
+                            break
+                        line_upper_chars.append(upper_ch)
+                        if ch.islower():
+                            local_masked.append(current_len + j)
+                    if valid and line_upper_chars:
+                        masked_positions.update(local_masked)
+                        sequence.append(''.join(line_upper_chars))
+                        current_len += len(line_upper_chars)
+        if current_id and sequence:
+            sequence = ''.join(sequence) #last
+            if sequence:
+                yield Reference(current_id, sequence, masked_positions)
     return list(read_fasta_helper())
 
 @handle_f_read("loading reference databases")
@@ -134,6 +153,9 @@ def import_fastq(filename) -> List[Read]:
 
                 if not header.startswith("@") or not plus.startswith("+"):
                     continue  # invalid format
+                # Record lowercase (soft-masked) positions before uppercasing.
+                soft_masked: Set[int] = {i for i, ch in enumerate(sequence)
+                                         if ch.islower()}
                 sequence = sequence.upper()
                 if not all(char in NUCLEO_LETTERS for char in sequence):
                     continue  # invalid sequence
@@ -141,7 +163,8 @@ def import_fastq(filename) -> List[Read]:
                 # converting using a Phred33 format
                 if len(sequence) != len(quality_str):
                     continue  # quality str and seq don't match in length
-                yield Read(header[1:], sequence, quality_str)
+                yield Read(header[1:], sequence, quality_str,
+                           soft_masked_positions=soft_masked)
                 # generator: returns and will continue to next in the next call
 
     return list(read_fastq_chunks())
