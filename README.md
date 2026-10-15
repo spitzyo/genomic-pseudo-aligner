@@ -1,4 +1,5 @@
 # Genomic Pseudo-Aligner
+![tests](https://github.com/spitzyo/genomic-pseudo-aligner/actions/workflows/tests.yml/badge.svg)
 
 A Python bioinformatics tool for genomic pseudo-alignment, variant calling (SNPs), and coverage analysis.
 

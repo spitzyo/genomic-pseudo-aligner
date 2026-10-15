@@ -17,3 +17,6 @@ __pycache__/
 # Ignore virtual environment (if you have one)
 .venv/
 env/
+
+# Ignore PyCharm files
+.idea/
