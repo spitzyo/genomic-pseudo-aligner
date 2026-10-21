@@ -327,12 +327,7 @@ class Aligner:
         read_seq = read.sequence
         read_quality = read.quality
 
-        # get the genome instance:
-        genome = None
-        for g in self._kmer_collection.get_all_genomes():
-            if g.identifier == genome_id:
-                genome = g
-                break
+        genome = self._kmer_collection.get_genome(genome_id)
 
         if not genome or not positions:
             return
@@ -362,11 +357,7 @@ class Aligner:
 
     def _calculate_mismatches(self, read, genome_id, start_pos) -> int:
         """Helper to calculate Hamming Distance."""
-        genome = None
-        for g in self._kmer_collection.get_all_genomes():
-            if g.identifier == genome_id:
-                genome = g
-                break
+        genome = self._kmer_collection.get_genome(genome_id)
         if not genome:
             return len(read.sequence)  # max error if genome not found
 

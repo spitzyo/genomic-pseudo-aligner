@@ -1,6 +1,6 @@
 ####################         IMPORTS          ####################
 from collections import defaultdict
-from typing import List, Set
+from typing import Dict, List, Optional, Set
 
 
 ####################         CLASSES          ####################
@@ -96,6 +96,7 @@ class KmerCollection:
         self._kmers = {}
         self._genome_index = defaultdict(set)
         self._genome_order = [] # to retain order in the original FASTA file
+        self._genomes_by_id = {} # identifier -> Reference, for O(1) lookups
 
     def add_kmers(self, kmer_seqs, genome, positions) -> None:
         """
@@ -107,6 +108,7 @@ class KmerCollection:
         if (genome not in self._genome_index and genome
                 not in self._genome_order):
             self._genome_order.append(genome)
+            self._id_index().setdefault(genome.identifier, genome)
         for kmer_seq, position in zip(kmer_seqs, positions):
             if kmer_seq not in self._kmers:
                 self._kmers[kmer_seq] = Kmer(kmer_seq)
@@ -120,10 +122,23 @@ class KmerCollection:
 
     def get_all_genomes(self) -> Set[Reference]:
         """This method returns the genomes in which at least 1 kmer appears."""
-        genomes = set()
-        for kmer in self._kmers.values():
-            genomes.update(kmer.get_genomes())
-        return genomes
+        return {genome for genome, kmer_seqs in self._genome_index.items()
+                if kmer_seqs}
+
+    def _id_index(self) -> Dict[str, Reference]:
+        """Returns the identifier -> Reference index. Collections pickled
+        before the index existed get it rebuilt on first use."""
+        index = self.__dict__.get('_genomes_by_id')
+        if index is None:
+            index = {}
+            for genome in self._genome_order:
+                index.setdefault(genome.identifier, genome)
+            self._genomes_by_id = index
+        return index
+
+    def get_genome(self, identifier: str) -> Optional[Reference]:
+        """Returns the Reference with this identifier, or None (O(1))."""
+        return self._id_index().get(identifier)
 
     def get_all_kmers(self):
         """This method returns all the kmer instances."""
