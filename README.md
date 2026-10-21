@@ -25,9 +25,15 @@ cd genomic-pseudo-aligner
 python3 main.py --help
 ```
 
-`genomic-pseudo-aligner` and `python3 main.py` take the same arguments.
+`genomic-pseudo-aligner`, `python3 main.py` and `python3 -m genomic_pseudo_aligner` take the same arguments.
+
+To use it as a library, import from the package, e.g. `from genomic_pseudo_aligner.aligner import Aligner, Read`.
+
+> **Upgrading from 0.2 or earlier:** the code moved into the `genomic_pseudo_aligner` package in 0.3.0. `.kdb` and `.aln` files saved by earlier versions can't be read any more; rebuild them with the `reference` / `align` tasks.
 
 ## 🛠️ System Architecture
+
+All code lives in the `genomic_pseudo_aligner` package. The `main.py` at the repo root only calls `genomic_pseudo_aligner.cli`.
 
 | Module | Description |
 | :--- | :--- |
@@ -35,8 +41,9 @@ python3 main.py --help
 | `kmers.py` | `Reference` genomes and the `KmerCollection` index (k-mer → genomes and positions; genome identifier → `Reference`). |
 | `extcoverage.py` | Per-position coverage depth and statistics for mapped reads. |
 | `extvartrack.py` | Per-allele variant counts, read depth, and quality / depth / allele-frequency filters. |
-| `basic_tasks.py` | The `reference`, `dumpref`, `align` and `dumpalign` tasks. |
-| `main.py` | Command-line arguments; dispatches to the tasks. |
+| `helper_functions.py` | FASTA/FASTQ reading, `.kdb`/`.aln` saving and loading, and error handling. |
+| `tasks.py` | The `reference`, `dumpref`, `align` and `dumpalign` tasks. |
+| `cli.py` | Command-line arguments; dispatches to the tasks. |
 
 ## 📊 Algorithm Design
 
@@ -127,6 +134,8 @@ genomic-pseudo-aligner -t dumpalign \
 | `dumpref` | Prints the index from `-r`, or builds it from `-g`/`-k` and prints it. |
 | `align` | Aligns `--reads` (FASTQ) against `-r`, or against `-g`/`-k`, and saves reads and summary to `-a` (`.aln`). |
 | `dumpalign` | Prints alignment statistics from `-a`, or aligns `--reads` and prints them, plus coverage / variants when enabled. |
+
+Where a task needs a reference, give either `-r` (a `.kdb` file) or `-g` with `-k`. If both are given, `-r` is used and `-g`/`-k` are ignored. The reference is loaded or built once per run.
 
 ### Options
 
