@@ -224,3 +224,26 @@ def test_align_saves_aln_that_dumpalign_reads(tmp_path, capsys):
     capsys.readouterr()
     dumpalign_task(readargs(["-t", "dumpalign", "-a", aln]))
     assert '"unique_mapped_reads": 1' in capsys.readouterr().out
+
+
+def test_dumpalign_lists_genomes_in_fasta_order(tmp_path, capsys):
+    """Coverage lists genomes in FASTA order. So does Summary for genomes
+    without mapped reads (here: all of them); genomes with mapped reads
+    are listed first, in the order their reads appear."""
+    import random
+    rng = random.Random(0)
+    names = [f"genome{i}" for i in (5, 1, 4, 0, 3, 2)]
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text("".join(
+        f">{name}\n{''.join(rng.choice('ACGT') for _ in range(40))}\n"
+        for name in names))
+    reads = tmp_path / "reads.fq"
+    reads.write_text(READS_FQ)
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", str(fasta), "-k", "8",
+                             "--reads", str(reads), "--coverage"]))
+    decoder = json.JSONDecoder()
+    text = capsys.readouterr().out
+    alignment, end = decoder.raw_decode(text)
+    coverage, _ = decoder.raw_decode(text[end:].lstrip())
+    assert list(alignment["Summary"]) == names
+    assert list(coverage["Coverage"]) == names

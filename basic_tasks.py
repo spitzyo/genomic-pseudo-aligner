@@ -191,14 +191,16 @@ def run_alignment(args, kmer_collection: KmerCollection,
         if (is_pos_int(args.ambiguous_threshold)) else 1
     # unique and total diff set to default values if not ints / smaller than 0
 
+    # FASTA order, so the output lists genomes in the same order every run
+    genomes = kmer_collection.get_ordered_genomes()
     aligner = Aligner(kmer_collection)
-    for genome in kmer_collection.get_all_genomes():
+    for genome in genomes:
         aligner.add_genome_to_summary(genome.identifier)
 
     # EXTCOVERAGE
     if args.coverage:
         genome_lens = {}
-        for genome in kmer_collection.get_all_genomes():
+        for genome in genomes:
             genome_lens[genome.identifier] = genome.total_bases
         aligner.enable_coverage(genome_lens, args.min_coverage)
 
