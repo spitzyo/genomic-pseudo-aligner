@@ -9,6 +9,14 @@ from helper_functions import AppErr
 ####################         Program          ####################
 
 
+def fraction(value):
+    """argparse type: a float between 0 and 1."""
+    number = float(value)
+    if not 0.0 <= number <= 1.0:
+        raise argparse.ArgumentTypeError(
+            f"must be between 0 and 1, got {value}")
+    return number
+
 def readargs(args=None):
     parser = argparse.ArgumentParser(
                     prog='genomic-pseudo-aligner',
@@ -68,7 +76,12 @@ def readargs(args=None):
                         help="Minimal quality score for variants")
     parser.add_argument('--min-variant-coverage',
                         type=int,
-                        help="Minimal coverage to call changes- variants")
+                        help="Minimal depth (uniquely mapped reads covering "
+                             "the position) to report a variant (default 10)")
+    parser.add_argument('--min-variant-af',
+                        type=fraction,
+                        help="Minimal allele frequency (alt_count / depth, "
+                             "0-1) to report a variant (default 0)")
     return parser.parse_args(args)
 
 def main():

@@ -151,10 +151,11 @@ class Aligner:
             kmers = filtered_kmers
         return kmers, low_quality, high_repeat
 
-    def enable_vartracking(self, min_quality, min_coverage):
+    def enable_vartracking(self, min_quality, min_coverage, min_af=None):
         """This method enables variant tracking: EXTVARTRACK,
         as it introduces a new attribute to be used."""
-        self._variant_tracker = VariantTracker(min_quality, min_coverage)
+        self._variant_tracker = VariantTracker(min_quality, min_coverage,
+                                               min_af)
 
     def align_read(self, read, k, unique_diff=1, total_diff=1,
                    min_read_quality=None, min_kmer_quality=None,
@@ -392,7 +393,8 @@ class Aligner:
         by directly comparing the read to the reference at start_pos.
         read_seq and read_quality are in reference orientation (reverse
         complemented / reversed for minus-strand reads).
-        Bases hanging off either end of the genome are ignored."""
+        Bases hanging off either end of the genome are ignored. Every
+        processed read counts toward the depth of the positions it covers."""
 
         genome = self._kmer_collection.get_genome(genome_id)
         if not genome:
@@ -400,16 +402,10 @@ class Aligner:
 
         first, last = aligned_span(start_pos, len(read_seq),
                                    genome.total_bases)
-        for i in range(first, last):
-            read_base = read_seq[i]
-            ref_base = genome.seq[start_pos + i]
-            if read_base != ref_base:  # diff between ref and read - found var
-                pos = start_pos + i
-                quality = read_quality[i]
-                self._variant_tracker.add_direct_variant(genome_id, pos,
-                                                          ref_base,
-                                                          read_base,
-                                                          quality)
+        self._variant_tracker.add_aligned_read(
+            genome_id, start_pos + first, read_seq[first:last],
+            read_quality[first:last],
+            genome.seq[start_pos + first:start_pos + last])
 
     def dump_variants(self, selected_genomes=None) -> [Dict[str, Any],
                                                        None]:

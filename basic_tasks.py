@@ -244,10 +244,9 @@ def align_task(args):
     # EXTVARTRACK
     if args.detect_variants:
         aligner.enable_vartracking(
-            min_quality=args.min_variant_quality if
-            args.min_variant_quality else None,
-            min_coverage=args.min_variant_coverage
-            if args.min_variant_coverage else None)
+            min_quality=args.min_variant_quality,
+            min_coverage=args.min_variant_coverage,
+            min_af=args.min_variant_af)
 
     reads = import_fastq(args.reads) # loading reads from file
     for read in reads:
