@@ -3,7 +3,7 @@ import gzip
 import pickle
 import json
 from typing import Dict, List, Optional, Tuple
-from .aligner import Aligner
+from .aligner import Aligner, Read
 from .kmers import KmerCollection
 from .helper_functions import (load_kdb_file, load_saved_file, import_fasta,
                               save_kmer_collection, is_pos_int,
@@ -105,6 +105,12 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
             reads, alignment_summary = data
         else:
             reads = data
+        if not (isinstance(reads, list)
+                and all(isinstance(read, Read) for read in reads)
+                and isinstance(alignment_summary, (dict, type(None)))):
+            raise AppErr(f"{alignfile} does not contain an alignment (it "
+                         f"holds a {type(data).__name__}); create .aln "
+                         f"files with the align task")
     if not alignfile and not reads:
         raise AppErr("no alignment file and no reads to dump")
 

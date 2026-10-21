@@ -115,16 +115,25 @@ def import_fasta(filename) -> List[Reference]:
 
 @handle_file_errors("reading a saved .kdb/.aln file")
 def load_saved_file(filename: str):
-    """Unpickles a gzipped .kdb / .aln file. Files saved before version
-    0.3.0 refer to the old top-level modules (kmers, aligner) and can't be
-    read any more; they raise an AppErr saying to rebuild them."""
-    with gzip.open(filename, "rb") as f:
-        try:
+    """Unpickles a gzipped .kdb / .aln file. Raises AppErr with a clear
+    message if the file is corrupt or not one of ours, or was saved before
+    version 0.3.0 (those refer to the old top-level modules kmers and
+    aligner and can't be read any more)."""
+    try:
+        with gzip.open(filename, "rb") as f:
             return pickle.load(f)
-        except (ModuleNotFoundError, AttributeError) as e:
-            raise AppErr(f"Error: {filename} was saved by an older version "
-                         f"of genomic-pseudo-aligner and can't be read "
-                         f"({e}). Rebuild it with this version.")
+    except (ModuleNotFoundError, AttributeError) as e:
+        raise AppErr(f"{filename} was saved by an older version of "
+                     f"genomic-pseudo-aligner and can't be read ({e}); "
+                     f"rebuild it with this version") from e
+    except gzip.BadGzipFile as e:
+        raise AppErr(f"{filename} is not a file saved by "
+                     f"genomic-pseudo-aligner (not gzip-compressed)") from e
+    except OSError:
+        raise # missing file, permission denied, ...: handled by decorator
+    except Exception as e: # EOFError, UnpicklingError, zlib.error, ...
+        raise AppErr(f"{filename} is corrupt or incomplete and can't be "
+                     f"read ({type(e).__name__}: {e})") from e
 
 @handle_f_read("loading reference databases")
 def load_kdb_file(filename: str) -> KmerCollection:
@@ -133,9 +142,15 @@ def load_kdb_file(filename: str) -> KmerCollection:
     and returns it as a KmerCollection instance if not corrupt.
     """
     if not filename.endswith('.kdb'):
-        raise AppErr(f"Error: {filename} is not a KDB file.")
+        raise UsageErr(f"{filename} is not a .kdb file (expected a name "
+                       f"ending in .kdb)")
 
-    return load_saved_file(filename)
+    kmer_collection = load_saved_file(filename)
+    if not isinstance(kmer_collection, KmerCollection):
+        raise AppErr(f"{filename} does not contain a k-mer reference (it "
+                     f"holds a {type(kmer_collection).__name__}); create "
+                     f".kdb files with the reference task")
+    return kmer_collection
 
 @handle_f_read("loading FASTQ file")
 def import_fastq(filename) -> List[Read]:

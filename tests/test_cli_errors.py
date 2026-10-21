@@ -277,3 +277,94 @@ def test_fastq_bad_records_are_skipped_with_one_warning(files, capsys):
     assert err.count(WARNING) == 1, err
     assert "skipped 2 malformed record(s); first at line 5: the quality " \
         "and sequence lengths differ" in err
+
+
+####################   UNREADABLE .kdb / .aln   ####################
+import gzip
+import pickle
+from genomic_pseudo_aligner.kmers import KmerCollection
+
+
+@pytest.fixture
+def saved(files, capsys):
+    """A valid .kdb and .aln built from the small inputs."""
+    assert run_cli(capsys, "-t", "reference", "-g", files / "ref.fa", "-k", 5,
+                   "-r", files / "good.kdb")[0] == 0
+    assert run_cli(capsys, "-t", "align", "-g", files / "ref.fa", "-k", 5,
+                   "--reads", files / "reads.fq",
+                   "-a", files / "good.aln")[0] == 0
+    capsys.readouterr()
+    return files
+
+
+def _write_gzip(path, data):
+    with gzip.open(str(path), "wb") as f:
+        f.write(data)
+
+
+BAD_KDB = {
+    "garbage": (lambda p: p.write_bytes(b"not a database"),
+                "is not a file saved by genomic-pseudo-aligner"),
+    "not_a_pickle": (lambda p: _write_gzip(p, b"hello"),
+                     "is corrupt or incomplete"),
+    "truncated": (lambda p: p.write_bytes(
+                      (p.parent / "good.kdb").read_bytes()[:30]),
+                  "is corrupt or incomplete"),
+    "alignment": (lambda p: p.write_bytes(
+                      (p.parent / "good.aln").read_bytes()),
+                  "does not contain a k-mer reference (it holds a tuple)"),
+    "empty": (lambda p: _write_gzip(p, pickle.dumps(KmerCollection())),
+              "contains no k-mers"),
+    "old_version": (lambda p: _write_gzip(
+                        p, b"\x80\x02ckmers\nKmerCollection\n)\x81."),
+                    "was saved by an older version"),
+    "directory": (lambda p: p.mkdir(), "Is a directory"),
+}
+
+
+@pytest.mark.parametrize("kind", list(BAD_KDB))
+def test_unreadable_kdb_exit_1(saved, capsys, kind):
+    make, expected = BAD_KDB[kind]
+    kdb = saved / f"{kind}.kdb"
+    make(kdb)
+    for argv in (["-t", "dumpalign", "-r", kdb, "--reads",
+                  saved / "reads.fq"],
+                 ["-t", "dumpref", "-r", kdb]):
+        assert_fails(run_cli(capsys, *argv), 1, f"{kind}.kdb", expected)
+
+
+def test_kdb_with_wrong_extension_exit_2(saved, capsys):
+    (saved / "good.db").write_bytes((saved / "good.kdb").read_bytes())
+    assert_fails(run_cli(capsys, "-t", "dumpref", "-r", saved / "good.db"),
+                 2, "good.db is not a .kdb file")
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0,
+                    reason="root can read files without read permission")
+def test_kdb_without_read_permission_exit_1(saved, capsys):
+    kdb = saved / "good.kdb"
+    kdb.chmod(0)
+    try:
+        assert_fails(run_cli(capsys, "-t", "dumpref", "-r", kdb), 1,
+                     "good.kdb: Permission denied")
+    finally:
+        kdb.chmod(0o644)
+
+
+@pytest.mark.parametrize("make, expected", [
+    (lambda d: (d / "x.aln").write_bytes((d / "good.kdb").read_bytes()),
+     "does not contain an alignment (it holds a KmerCollection)"),
+    (lambda d: (d / "x.aln").write_bytes(b"junk"),
+     "is not a file saved by genomic-pseudo-aligner"),
+])
+def test_unreadable_aln_exit_1(saved, capsys, make, expected):
+    make(saved)
+    assert_fails(run_cli(capsys, "-t", "dumpalign", "-a", saved / "x.aln"),
+                 1, "x.aln", expected)
+
+
+def test_valid_saved_files_still_work(saved, capsys):
+    status, out, err = run_cli(capsys, "-t", "dumpalign",
+                               "-a", saved / "good.aln")
+    assert (status, err) == (0, "")
+    assert json.loads(out)["Statistics"]["unique_mapped_reads"] == 1

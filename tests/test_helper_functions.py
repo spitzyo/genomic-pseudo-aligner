@@ -102,5 +102,5 @@ def test_kdb_from_before_the_package_move_gives_clear_error(tmp_path):
     # protocol 2 pickle of kmers.KmerCollection(), as the old layout wrote
     with gzip.open(str(old_kdb), "wb") as f:
         f.write(b"\x80\x02ckmers\nKmerCollection\n)\x81.")
-    with pytest.raises(AppErr, match="older version.*Rebuild it"):
+    with pytest.raises(AppErr, match="older version.*rebuild it"):
         load_kdb_file(str(old_kdb))
