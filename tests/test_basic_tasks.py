@@ -2,13 +2,15 @@
 import os
 import sys
 import json
-from kmers import Reference, KmerCollection
-from aligner import Read, Aligner
-from helper_functions import save_kmer_collection
-from main import readargs
-from basic_tasks import (build_reference, dump_reference, reference_task,
-                         dumpref_task, create_kmer_details,
-                         create_genome_summary, dump_alignment)
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.aligner import Read, Aligner
+from genomic_pseudo_aligner.helper_functions import save_kmer_collection
+from genomic_pseudo_aligner.cli import readargs
+from genomic_pseudo_aligner.tasks import (build_reference, dump_reference,
+                                          reference_task, dumpref_task,
+                                          create_kmer_details,
+                                          create_genome_summary,
+                                          dump_alignment)
 
 ####################          TESTS           ####################
 
@@ -130,3 +132,121 @@ def test_dump_alignment_reports_quality_stats_and_all_genomes(capsys):
 def test_threshold_arguments_are_integers():
     args = readargs(["-t", "align", "-m", "3", "-p", "2"])
     assert (args.unique_threshold, args.ambiguous_threshold) == (3, 2)
+
+
+####################   DUMPALIGN LOADS THE REFERENCE ONCE   ####################
+from genomic_pseudo_aligner import tasks
+from genomic_pseudo_aligner.tasks import (
+    dumpalign_task, align_task, load_or_build_reference)
+
+READS_FQ = "@r1\nACGTACGTAC\n+\nIIIIIIIIII\n"
+
+
+def _count_calls(monkeypatch, name):
+    """Wraps tasks.<name> so each call is recorded."""
+    calls = []
+    original = getattr(tasks, name)
+    def wrapper(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(tasks, name, wrapper)
+    return calls
+
+
+def _inputs(tmp_path):
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">from_fasta\nACGTACGTACGT\n")
+    reads = tmp_path / "reads.fq"
+    reads.write_text(READS_FQ)
+    return str(fasta), str(reads)
+
+
+def test_dumpalign_builds_fasta_reference_once(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    builds = _count_calls(monkeypatch, "build_reference")
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3",
+                             "--reads", reads, "--coverage"]))
+    out = capsys.readouterr().out
+    assert len(builds) == 1
+    assert "unique_mapped_reads" in out and "Coverage" in out
+
+
+def test_dumpalign_loads_kdb_once(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    kdb = str(tmp_path / "ref.kdb")
+    reference_task(readargs(["-t", "reference", "-g", fasta, "-k", "3",
+                             "-r", kdb]))
+    loads = _count_calls(monkeypatch, "load_kdb_file")
+    dumpalign_task(readargs(["-t", "dumpalign", "-r", kdb,
+                             "--reads", reads]))
+    assert len(loads) == 1
+    assert "unique_mapped_reads" in capsys.readouterr().out
+
+
+def test_kdb_wins_over_fasta_when_both_given(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    other_fasta = tmp_path / "other.fa"
+    other_fasta.write_text(">from_kdb\nACGTACGTACGT\n")
+    kdb = str(tmp_path / "ref.kdb")
+    reference_task(readargs(["-t", "reference", "-g", str(other_fasta),
+                             "-k", "3", "-r", kdb]))
+    builds = _count_calls(monkeypatch, "build_reference")
+
+    collection, k = load_or_build_reference(
+        readargs(["-t", "align", "-g", fasta, "-k", "5", "-r", kdb]))
+    assert k == 3  # from the .kdb, not -k
+    assert [g.identifier for g in collection.get_ordered_genomes()] == [
+        "from_kdb"]
+
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3",
+                             "-r", kdb, "--reads", reads]))
+    out = capsys.readouterr().out
+    assert builds == []
+    assert "from_kdb" in out and "from_fasta" not in out
+
+
+def test_dumpalign_without_reads_prints_error(tmp_path, capsys):
+    fasta, _ = _inputs(tmp_path)
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3"]))
+    assert "Error: dumpalign needs" in capsys.readouterr().out
+
+
+def test_missing_reference_prints_error(tmp_path, capsys):
+    _, reads = _inputs(tmp_path)
+    assert align_task(readargs(["-t", "align", "--reads", reads])) is None
+    assert "Error: a reference is needed" in capsys.readouterr().out
+
+
+def test_align_saves_aln_that_dumpalign_reads(tmp_path, capsys):
+    fasta, reads = _inputs(tmp_path)
+    aln = str(tmp_path / "out.aln")
+    result = align_task(readargs(["-t", "align", "-g", fasta, "-k", "3",
+                                  "--reads", reads, "-a", aln]))
+    reads_out, aligner = result
+    assert reads_out[0].status == "unique"
+    capsys.readouterr()
+    dumpalign_task(readargs(["-t", "dumpalign", "-a", aln]))
+    assert '"unique_mapped_reads": 1' in capsys.readouterr().out
+
+
+def test_dumpalign_lists_genomes_in_fasta_order(tmp_path, capsys):
+    """Coverage lists genomes in FASTA order. So does Summary for genomes
+    without mapped reads (here: all of them); genomes with mapped reads
+    are listed first, in the order their reads appear."""
+    import random
+    rng = random.Random(0)
+    names = [f"genome{i}" for i in (5, 1, 4, 0, 3, 2)]
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text("".join(
+        f">{name}\n{''.join(rng.choice('ACGT') for _ in range(40))}\n"
+        for name in names))
+    reads = tmp_path / "reads.fq"
+    reads.write_text(READS_FQ)
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", str(fasta), "-k", "8",
+                             "--reads", str(reads), "--coverage"]))
+    decoder = json.JSONDecoder()
+    text = capsys.readouterr().out
+    alignment, end = decoder.raw_decode(text)
+    coverage, _ = decoder.raw_decode(text[end:].lstrip())
+    assert list(alignment["Summary"]) == names
+    assert list(coverage["Coverage"]) == names

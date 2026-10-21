@@ -1,11 +1,11 @@
 ####################         IMPORTS          ####################
 
 import pytest
-from kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
 import gzip
-from helper_functions import (import_fasta, import_fastq, load_kdb_file,
-                              save_kmer_collection, is_pos_int, open_gz_file,
-                              AppErr)
+from genomic_pseudo_aligner.helper_functions import (
+    import_fasta, import_fastq, load_kdb_file, save_kmer_collection,
+    is_pos_int, open_gz_file, AppErr)
 
 ####################          TESTS           ####################
 
@@ -94,3 +94,13 @@ def test_missing_file():
     """Test that missing files raise AppErr instead of crashing."""
     with pytest.raises(AppErr):
         import_fasta("ghost_file.fa")
+
+def test_kdb_from_before_the_package_move_gives_clear_error(tmp_path):
+    """.kdb files saved before 0.3.0 point at the old top-level 'kmers'
+    module. Loading one says to rebuild it."""
+    old_kdb = tmp_path / "old.kdb"
+    # protocol 2 pickle of kmers.KmerCollection(), as the old layout wrote
+    with gzip.open(str(old_kdb), "wb") as f:
+        f.write(b"\x80\x02ckmers\nKmerCollection\n)\x81.")
+    with pytest.raises(AppErr, match="older version.*Rebuild it"):
+        load_kdb_file(str(old_kdb))

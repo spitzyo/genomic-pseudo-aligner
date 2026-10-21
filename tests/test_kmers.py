@@ -1,5 +1,5 @@
 ####################         IMPORTS          ####################
-from kmers import Reference, Kmer, KmerCollection
+from genomic_pseudo_aligner.kmers import Reference, Kmer, KmerCollection
 
 ####################          TESTS           ####################
 

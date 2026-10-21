@@ -1,9 +1,9 @@
 ####################         IMPORTS          ####################
 from collections import Counter, defaultdict
 from typing import List, Dict, Any, Tuple
-from kmers import Kmer
-from extcoverage import Coverage
-from extvartrack import VariantTracker
+from .kmers import Kmer
+from .extcoverage import Coverage
+from .extvartrack import VariantTracker
 
 ####################         CONSTANTS        ####################
 MAX_MISMATCH_THRESHOLD = 0.1  # 10% maximum allowed error rate

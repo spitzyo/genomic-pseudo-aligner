@@ -3,8 +3,8 @@ import functools
 import gzip
 import pickle
 from typing import List, Callable
-from aligner import Read
-from kmers import Reference, KmerCollection
+from .aligner import Read
+from .kmers import Reference, KmerCollection
 import sys
 
 
@@ -99,6 +99,18 @@ def import_fasta(filename) -> List[Reference]:
                     yield Reference(current_id, sequence)
     return list(read_fasta_helper())
 
+def load_saved_file(filename: str):
+    """Unpickles a gzipped .kdb / .aln file. Files saved before version
+    0.3.0 refer to the old top-level modules (kmers, aligner) and can't be
+    read any more; they raise an AppErr saying to rebuild them."""
+    with gzip.open(filename, "rb") as f:
+        try:
+            return pickle.load(f)
+        except (ModuleNotFoundError, AttributeError) as e:
+            raise AppErr(f"Error: {filename} was saved by an older version "
+                         f"of genomic-pseudo-aligner and can't be read "
+                         f"({e}). Rebuild it with this version.")
+
 @handle_f_read("loading reference databases")
 def load_kdb_file(filename: str) -> KmerCollection:
     """
@@ -108,9 +120,7 @@ def load_kdb_file(filename: str) -> KmerCollection:
     if not filename.endswith('.kdb'):
         raise AppErr(f"Error: {filename} is not a KDB file.")
 
-    with gzip.open(filename, "rb") as f:
-        kmer_collection = pickle.load(f)
-        return kmer_collection
+    return load_saved_file(filename)
 
 @handle_f_read("loading FASTQ file")
 def import_fastq(filename) -> List[Read]:

@@ -17,8 +17,8 @@ import time
 # Make the repository root importable when run as a script.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aligner import Aligner, Read  # noqa: E402
-from kmers import KmerCollection, Reference  # noqa: E402
+from genomic_pseudo_aligner.aligner import Aligner, Read  # noqa: E402
+from genomic_pseudo_aligner.kmers import KmerCollection, Reference  # noqa: E402
 
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 

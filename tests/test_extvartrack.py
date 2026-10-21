@@ -1,5 +1,5 @@
 ####################         IMPORTS          ####################
-from extvartrack import Variant, VariantTracker
+from genomic_pseudo_aligner.extvartrack import Variant, VariantTracker
 
 ####################          TESTS           ####################
 
@@ -61,9 +61,9 @@ def test_variant_stats_count_filtered_and_are_idempotent():
 ####################   DEPTH AND ALLELE COUNTS   ####################
 import random
 import pytest
-from aligner import Aligner, Read, reverse_complement
-from kmers import Reference, KmerCollection
-from main import readargs
+from genomic_pseudo_aligner.aligner import Aligner, Read, reverse_complement
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.cli import readargs
 
 K = 8
 VARIANT_POS = 40

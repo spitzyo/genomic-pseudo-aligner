@@ -25,3 +25,4 @@ jobs:
           pip install .
           genomic-pseudo-aligner --help
           python main.py --help
+          python -m genomic_pseudo_aligner --help

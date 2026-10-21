@@ -1,6 +1,6 @@
 ####################         IMPORTS          ####################
-from aligner import Read, Aligner
-from kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.aligner import Read, Aligner
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
 
 ####################          TESTS           ####################
 
@@ -143,7 +143,7 @@ def test_read_overhanging_genome_end():
 
 
 ####################          STRANDS          ####################
-from aligner import reverse_complement
+from genomic_pseudo_aligner.aligner import reverse_complement
 
 
 def test_reverse_complement():

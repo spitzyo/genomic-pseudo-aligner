@@ -2,10 +2,10 @@
 import gzip
 import pickle
 import json
-from typing import Dict
-from aligner import Aligner
-from kmers import KmerCollection
-from helper_functions import (load_kdb_file, import_fasta,
+from typing import Dict, List, Optional, Tuple
+from .aligner import Aligner
+from .kmers import KmerCollection
+from .helper_functions import (load_kdb_file, load_saved_file, import_fasta,
                               save_kmer_collection, is_pos_int,
                               import_fastq, get_kmer_size_from_collection,
                               handle_f_write, handle_f_read)
@@ -93,12 +93,11 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
 
     alignment_summary = None
     if alignfile:
-        with gzip.open(alignfile, "rb") as f:
-            data = pickle.load(f)
-            if isinstance(data, tuple) and len(data) == 2:
-                reads, alignment_summary = data
-            else:
-                reads = data
+        data = load_saved_file(alignfile)
+        if isinstance(data, tuple) and len(data) == 2:
+            reads, alignment_summary = data
+        else:
+            reads = data
     if not alignfile and not reads:
         print("No alignment file and no reads provided.")
         return
@@ -157,21 +156,72 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         print(json.dumps(result, indent=4))
 
 @handle_f_read("loading or building reference db")
-def load_or_build_reference(args) -> [KmerCollection, None]:
-    """Loads or builds a kmer collection from ref genomes."""
-    if args.genomefile and args.kmer_size and is_pos_int(args.kmer_size):
-        kmer_collection = KmerCollection()
-        build_reference(args.genomefile, args.kmer_size, kmer_collection)
-    elif args.referencefile: # loading reference
+def load_or_build_reference(args) -> Optional[Tuple[KmerCollection, int]]:
+    """Loads (-r) or builds (-g with -k) the kmer collection, once.
+    Returns (kmer collection, k), or None after printing an error.
+    If both are given, the pre-built .kdb file (-r) wins and k comes from
+    it; -g and -k are then ignored."""
+    if args.referencefile: # pre-built reference
         kmer_collection = load_kdb_file(args.referencefile)
-        if not kmer_collection:
+        k = (get_kmer_size_from_collection(kmer_collection)
+             if kmer_collection else None)
+        if not k:
             print(f"Error: failed to load reference kmers from "
                   f"kdb file {args.referencefile}.")
-            return
+            return None
+    elif args.genomefile and is_pos_int(args.kmer_size): # building it
+        kmer_collection = KmerCollection()
+        build_reference(args.genomefile, args.kmer_size, kmer_collection)
+        k = args.kmer_size
     else:
-        print(f"Error: missing arguments to build the kmer reference.")
-        return
-    return kmer_collection
+        print("Error: a reference is needed: either -r, or -g with a "
+              "positive -k.")
+        return None
+    return kmer_collection, k
+
+def run_alignment(args, kmer_collection: KmerCollection,
+                  k: int) -> Tuple[List, Aligner]:
+    """Aligns the reads in args.reads against an already loaded kmer
+    collection, with the extensions enabled in args.
+    Returns (reads, aligner)."""
+    unique_diff = int(args.unique_threshold) \
+        if (is_pos_int(args.unique_threshold)) else 1
+    total_diff = int(args.ambiguous_threshold) \
+        if (is_pos_int(args.ambiguous_threshold)) else 1
+    # unique and total diff set to default values if not ints / smaller than 0
+
+    # FASTA order, so the output lists genomes in the same order every run
+    genomes = kmer_collection.get_ordered_genomes()
+    aligner = Aligner(kmer_collection)
+    for genome in genomes:
+        aligner.add_genome_to_summary(genome.identifier)
+
+    # EXTCOVERAGE
+    if args.coverage:
+        genome_lens = {}
+        for genome in genomes:
+            genome_lens[genome.identifier] = genome.total_bases
+        aligner.enable_coverage(genome_lens, args.min_coverage)
+
+    # EXTVARTRACK
+    if args.detect_variants:
+        aligner.enable_vartracking(
+            min_quality=args.min_variant_quality,
+            min_coverage=args.min_variant_coverage,
+            min_af=args.min_variant_af)
+
+    reads = import_fastq(args.reads) # loading reads from file
+    for read in reads:
+        aligner.align_read(read, k, unique_diff, total_diff,
+                           min_read_quality=args.min_read_quality,
+                           min_kmer_quality=args.min_kmer_quality,
+                           max_genomes=args.max_genomes)
+        # EXTQUALITY: quality filtering would be executed if required
+    return reads, aligner
+
+def _selected_genomes(args) -> Optional[List[str]]:
+    """The genome ids given with --genomes, or None for all genomes."""
+    return args.genomes.split(',') if args.genomes else None
 
 
 ####################     Final Tasks      ####################
@@ -203,100 +253,57 @@ def dumpref_task(args) -> None:
 
 @handle_f_read("loading alignment (.aln) file")
 @handle_f_write("saving alignment results")
-def align_task(args):
-    """Executes the ALIGN task."""
+def align_task(args) -> Optional[Tuple[List, Aligner]]:
+    """Executes the ALIGN task. Returns (reads, aligner), or None after
+    printing an error."""
     if not args.reads:
         print("Error: missing reads file for 'align' task.")
-        return
+        return None
 
-    if args.referencefile: # pre-built reference
-        kmer_collection = load_kdb_file(args.referencefile)  # loading kmer ref
-        k = get_kmer_size_from_collection(kmer_collection)  # get kmer size
-
-    elif args.genomefile and args.kmer_size: # building the reference
-        if not is_pos_int(args.kmer_size):
-            return
-        kmer_collection = KmerCollection()
-        build_reference(args.genomefile, args.kmer_size, kmer_collection)
-        k = args.kmer_size
-    else:
-        print("Error: Unable to build or import a kmer reference.")
-        return
-
-    unique_diff = int(args.unique_threshold) \
-        if (is_pos_int(args.unique_threshold)) else 1
-    total_diff = int(args.ambiguous_threshold) \
-        if (is_pos_int(args.ambiguous_threshold)) else 1
-    # unique and total diff set to default values if not ints / smaller than 0
-
-    aligner = Aligner(kmer_collection)
-    for genome in kmer_collection.get_all_genomes():
-        aligner.add_genome_to_summary(genome.identifier)
-
-    # EXTCOVERAGE
-    if args.coverage:
-        genome_lens = {}
-        for genome in kmer_collection.get_all_genomes():
-            genome_lens[genome.identifier] = genome.total_bases
-        aligner.enable_coverage(genome_lens, args.min_coverage)
-
-    # EXTVARTRACK
-    if args.detect_variants:
-        aligner.enable_vartracking(
-            min_quality=args.min_variant_quality,
-            min_coverage=args.min_variant_coverage,
-            min_af=args.min_variant_af)
-
-    reads = import_fastq(args.reads) # loading reads from file
-    for read in reads:
-        aligner.align_read(read, k, unique_diff, total_diff,
-                           min_read_quality=args.min_read_quality,
-                           min_kmer_quality=args.min_kmer_quality,
-                           max_genomes=args.max_genomes)
-        # EXTQUALITY: quality filtering would be executed if required
+    reference = load_or_build_reference(args)
+    if reference is None:
+        return None
+    reads, aligner = run_alignment(args, *reference)
 
     if args.alignfile:
         with gzip.open(args.alignfile, "wb") as f:
             pickle.dump((
                 reads, aligner.alignment_summary), f) # type: ignore
-
-    if args.coverage: # output the coverage
-        selected_genomes = args.genomes.split(',') if args.genomes else None
-        coverage = aligner.dump_coverage(selected_genomes, args.full_coverage)
-        return reads, coverage, aligner
-
-    return reads, aligner # in case needed not in an alignfile
+    return reads, aligner
 
 @handle_f_read("loading data for alignment dump")
 def dumpalign_task(args) -> None:
-    """Executes the DUMPALIGN task (in three different ways)."""
+    """Executes the DUMPALIGN task: either dumps a saved alignment (-a), or
+    aligns the reads (loading the reference once) and dumps the result."""
+
+    if args.alignfile:
+        dump_alignment(alignfile=args.alignfile)
+        return
+
+    if not args.reads:
+        print("Error: dumpalign needs either -a, or --reads with a "
+              "reference.")
+        return
 
     # EXTQUALITY
     quality_filtering = args.min_read_quality is not None or \
                              args.min_kmer_quality is not None or \
                              args.max_genomes is not None
 
-    if args.alignfile:
-        dump_alignment(alignfile=args.alignfile)
+    # kmer collection is retrieved from genomefile+kmer_s, or .kdb file:
+    reference = load_or_build_reference(args) # sections 3.7 / 3.8
+    if reference is None:
         return
-
-    # else - kmer collection is retrieved from genomefile+kmer_s, or .kdb file:
-    kmer_collection = load_or_build_reference(args) # sections 3.7 / 3.8
-    if not kmer_collection:
-        return
-
-    alignment_results = align_task(args)
-    reads = alignment_results[0] # as defined in align_task
-    aligner = alignment_results[-1] # last item in any case is aligner
+    reads, aligner = run_alignment(args, *reference)
     dump_alignment(reads=reads, aligner=aligner,
                    quality_filtering=quality_filtering)
 
     if args.coverage:
-        coverage_output = alignment_results[1]
+        coverage_output = aligner.dump_coverage(_selected_genomes(args),
+                                                args.full_coverage)
         print(json.dumps(coverage_output, indent=4)) # dump coverage
 
     if args.detect_variants:
-        selected_genomes = args.genomes.split(',') if args.genomes else None
-        variants_output = aligner.dump_variants(selected_genomes)
+        variants_output = aligner.dump_variants(_selected_genomes(args))
         if variants_output:
             print(json.dumps(variants_output, indent=4))
