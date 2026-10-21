@@ -368,3 +368,40 @@ def test_valid_saved_files_still_work(saved, capsys):
                                "-a", saved / "good.aln")
     assert (status, err) == (0, "")
     assert json.loads(out)["Statistics"]["unique_mapped_reads"] == 1
+
+
+####################   BINARY / BAD GZIP INPUT   ####################
+
+@pytest.mark.parametrize("name, content, expected", [
+    ("fake.fa.gz", f">g1\n{GENOME}\n".encode(),
+     "fake.fa.gz is not valid gzip-compressed FASTA"),
+    ("cut.fa.gz", gzip.compress(f">g1\n{GENOME}\n".encode())[:25],
+     "cut.fa.gz is not valid gzip-compressed FASTA"),
+    ("binary.fa", b"\x89PNG\r\n\x1a\n\xff\xfe\x00",
+     "binary.fa is not a FASTA text file"),
+])
+def test_undecodable_fasta_exit_1(files, capsys, name, content, expected):
+    (files / name).write_bytes(content)
+    assert_fails(_reference(capsys, files / name), 1, expected)
+
+
+@pytest.mark.parametrize("name, content, expected", [
+    ("fake.fq.gz", b"@r1\nACGT\n+\nIIII\n",
+     "fake.fq.gz is not valid gzip-compressed FASTQ"),
+    ("binary.fq", b"\xff\xfe\x00\x01", "binary.fq is not a FASTQ text file"),
+])
+def test_undecodable_fastq_exit_1(files, capsys, name, content, expected):
+    (files / name).write_bytes(content)
+    assert_fails(_dumpalign(capsys, files, files / name), 1, expected)
+
+
+def test_gzipped_inputs_still_work(files, capsys):
+    (files / "ref.fa.gz").write_bytes(
+        gzip.compress((files / "ref.fa").read_bytes()))
+    (files / "reads.fq.gz").write_bytes(
+        gzip.compress((files / "reads.fq").read_bytes()))
+    status, out, err = run_cli(capsys, "-t", "dumpalign",
+                               "-g", files / "ref.fa.gz", "-k", 5,
+                               "--reads", files / "reads.fq.gz")
+    assert (status, err) == (0, "")
+    assert json.loads(out)["Statistics"]["unique_mapped_reads"] == 1

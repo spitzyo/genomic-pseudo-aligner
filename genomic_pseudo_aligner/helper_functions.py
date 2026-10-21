@@ -1,7 +1,9 @@
 ####################        Imports         ####################
+import contextlib
 import functools
 import gzip
 import pickle
+import zlib
 from typing import List, Callable, Optional
 from .aligner import Read
 from .kmers import Reference, KmerCollection
@@ -59,6 +61,19 @@ handle_f_write = handle_file_errors
 
 ####################        File Reading         ####################
 
+@contextlib.contextmanager
+def _reading_text(filename: str, kind: str):
+    """Turns decoding errors while reading a text input into an AppErr
+    that names the file (these errors don't carry a file name)."""
+    try:
+        yield
+    except (gzip.BadGzipFile, EOFError, zlib.error) as e:
+        raise AppErr(f"{filename} is not valid gzip-compressed {kind} "
+                     f"({type(e).__name__}: {e})") from e
+    except UnicodeDecodeError as e:
+        raise AppErr(f"{filename} is not a {kind} text file (it contains "
+                     f"binary data)") from e
+
 def open_gz_file(filename: str, mode='r'):
     """This helper function is used to open a gzip or regular file."""
     if filename.endswith('.gz'):
@@ -80,7 +95,7 @@ def import_fasta(filename) -> List[Reference]:
     # each record: [identifier, sequence lines, first bad line number or
     # None, header line number]
     records = []
-    with open_gz_file(filename, "r") as f:
+    with _reading_text(filename, "FASTA"), open_gz_file(filename, "r") as f:
         for line_no, line in enumerate(f, 1):
             line = line.strip()
             if not line:
@@ -165,7 +180,7 @@ def import_fastq(filename) -> List[Read]:
     reads = []
     skipped = 0
     first_problem = None
-    with open_gz_file(filename, "r") as f:
+    with _reading_text(filename, "FASTQ"), open_gz_file(filename, "r") as f:
         line_no = 0
         while True:
             header = f.readline()

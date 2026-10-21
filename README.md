@@ -171,6 +171,7 @@ genomic-pseudo-aligner: warning: reads.fq: skipped 2 malformed record(s); first 
 
 * **FASTA** (`-g`): the first non-empty line must be a `>` header. A record with an empty header, no sequence, or any character other than `A`, `C`, `G`, `T`, `N` (lowercase included) is skipped with a warning. The run fails if no record is usable, or if no k-mer can be built (every genome shorter than `-k`). No `.kdb` is written on failure.
 * **FASTQ** (`--reads`): records with a header not starting with `@`, a third line not starting with `+`, an empty sequence, characters other than `ACGTN`, or a quality string of a different length are skipped, with one warning giving the count and the first problem. The run fails if no read is usable.
+* **Compressed or binary input**: a `.gz` FASTA/FASTQ that isn't valid gzip data (or is truncated), or a binary file given as FASTA/FASTQ, fails with a message naming the file.
 * **`.kdb` / `.aln`**: a file that is not one of ours, is corrupt or truncated, holds the wrong kind of data (e.g. an `.aln` given as `-r`), or was saved before 0.3.0 fails with a message saying which.
 
 Warnings without failure: `align` without `-a` (nothing is saved), `--genomes` without `--coverage` or `--detect-variants` (no effect), and a genome shorter than `-k` (no k-mers).
