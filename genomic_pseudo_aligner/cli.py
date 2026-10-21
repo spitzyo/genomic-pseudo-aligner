@@ -4,7 +4,12 @@ import sys
 import argparse
 from .tasks import (reference_task, dumpref_task,
                          align_task, dumpalign_task)
-from .helper_functions import AppErr
+from .helper_functions import AppErr, UsageErr, PROG
+
+TASKS = {'reference': reference_task,
+         'dumpref': dumpref_task,
+         'align': align_task,
+         'dumpalign': dumpalign_task}
 
 ####################         Program          ####################
 
@@ -19,10 +24,11 @@ def fraction(value):
 
 def readargs(args=None):
     parser = argparse.ArgumentParser(
-                    prog='genomic-pseudo-aligner',
+                    prog=PROG,
     )
     parser.add_argument('-t', '--task',
-                        help="task",
+                        help="task to run",
+                        choices=list(TASKS),
                         required=True
                         )
     parser.add_argument('-g', '--genomefile',
@@ -86,27 +92,23 @@ def readargs(args=None):
                              "0-1) to report a variant (default 0)")
     return parser.parse_args(args)
 
-def main():
+def main(argv=None):
+    """Runs the CLI. Results go to stdout; errors and warnings go to stderr.
+    Exit status: 0 on success, 1 when the task fails (missing or invalid
+    input file, ...), 2 for invalid command-line arguments."""
     try:
-        args = readargs()
-
-        if args.task == "reference":
-            reference_task(args)
-        elif args.task == "dumpref":
-            dumpref_task(args)
-        elif args.task == "align":
-            align_task(args)
-        elif args.task == "dumpalign":
-            dumpalign_task(args)
-        else:
-            print("Error: unknown task")
-            sys.exit(1)
-
+        args = readargs(argv) # argparse exits with status 2 on bad arguments
+        TASKS[args.task](args)
+    except UsageErr as e:
+        print(f"{PROG}: error: {e}\nRun '{PROG} --help' for usage.",
+              file=sys.stderr)
+        sys.exit(2)
     except AppErr as e: # catch the errors raised
-        sys.stderr.write(f"{e}\n")
+        print(f"{PROG}: error: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        sys.stderr.write(f"Unexpected System Error: {e}\n")
+        print(f"{PROG}: error: unexpected {type(e).__name__}: {e}",
+              file=sys.stderr)
         sys.exit(1)
 
 if __name__=="__main__":

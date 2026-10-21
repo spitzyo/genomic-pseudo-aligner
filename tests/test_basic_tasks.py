@@ -2,9 +2,11 @@
 import os
 import sys
 import json
+import pytest
 from genomic_pseudo_aligner.kmers import Reference, KmerCollection
 from genomic_pseudo_aligner.aligner import Read, Aligner
-from genomic_pseudo_aligner.helper_functions import save_kmer_collection
+from genomic_pseudo_aligner.helper_functions import (save_kmer_collection,
+                                                      UsageErr)
 from genomic_pseudo_aligner.cli import readargs
 from genomic_pseudo_aligner.tasks import (build_reference, dump_reference,
                                           reference_task, dumpref_task,
@@ -205,16 +207,19 @@ def test_kdb_wins_over_fasta_when_both_given(tmp_path, monkeypatch, capsys):
     assert "from_kdb" in out and "from_fasta" not in out
 
 
-def test_dumpalign_without_reads_prints_error(tmp_path, capsys):
+def test_dumpalign_without_reads_raises_usage_error(tmp_path, capsys):
     fasta, _ = _inputs(tmp_path)
-    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3"]))
-    assert "Error: dumpalign needs" in capsys.readouterr().out
+    with pytest.raises(UsageErr, match="dumpalign task needs"):
+        dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k",
+                                 "3"]))
+    assert capsys.readouterr().out == ""
 
 
-def test_missing_reference_prints_error(tmp_path, capsys):
+def test_missing_reference_raises_usage_error(tmp_path, capsys):
     _, reads = _inputs(tmp_path)
-    assert align_task(readargs(["-t", "align", "--reads", reads])) is None
-    assert "Error: a reference is needed" in capsys.readouterr().out
+    with pytest.raises(UsageErr, match="a reference is needed"):
+        align_task(readargs(["-t", "align", "--reads", reads]))
+    assert capsys.readouterr().out == ""
 
 
 def test_align_saves_aln_that_dumpalign_reads(tmp_path, capsys):

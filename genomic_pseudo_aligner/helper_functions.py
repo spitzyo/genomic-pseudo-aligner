@@ -2,7 +2,7 @@
 import functools
 import gzip
 import pickle
-from typing import List, Callable
+from typing import List, Callable, Optional
 from .aligner import Read
 from .kmers import Reference, KmerCollection
 import sys
@@ -10,55 +10,52 @@ import sys
 
 ####################        Constants         ####################
 NUCLEO_LETTERS = {'A', 'C', 'G', 'T', 'N'} # a set of possible letters
+PROG = "genomic-pseudo-aligner" # name used in error and warning messages
 
 ####################     Error Handling       ####################
 
 class AppErr(Exception):
-    """Custom exception for known application errors (files, permissions)."""
+    """An error to report to the user. The CLI prints the message to stderr
+    and exits with status 1."""
     pass
 
-def handle_f_read(operation_desc: str) -> Callable:
+class UsageErr(AppErr):
+    """A problem with the command-line arguments (exit status 2)."""
+    pass
+
+def warn(message: str) -> None:
+    """Prints a warning to stderr, keeping stdout for results only."""
+    print(f"{PROG}: warning: {message}", file=sys.stderr)
+
+def handle_file_errors(operation_desc: str) -> Callable:
     """
-    This decorator is used to handle errors of file read operations.
-    It is used throughout the program with different files that need opening.
+    This decorator turns file errors into an AppErr with a clear message,
+    e.g. "ref.fa: No such file or directory (while loading FASTA file)".
+    An AppErr raised inside is passed through unchanged, so nested
+    decorated calls don't stack their descriptions.
     :param operation_desc: for example, "loading reference databases", etc.
-    :return: the decorated function with proper file reading errors' handling.
     """
     def decorator(func):
         @functools.wraps(func) # maintain function attrs after wrapping
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except FileNotFoundError:
-                raise AppErr(f"Error: File not found while {operation_desc}.")
-            except PermissionError:
-                raise AppErr(f"Error: Permission denied to "
-                      f"file while {operation_desc}.")
+            except AppErr:
+                raise
+            except OSError as e:
+                reason = e.strerror or str(e)
+                target = f"{e.filename}: " if e.filename else ""
+                raise AppErr(f"{target}{reason} (while {operation_desc})") \
+                    from e
             except Exception as e:
-                raise AppErr(f"Error while {operation_desc}: {str(e)}")
+                raise AppErr(f"unexpected {type(e).__name__} while "
+                             f"{operation_desc}: {e}") from e
         return wrapper
     return decorator
 
-def handle_f_write(operation_desc: str) -> Callable:
-    """
-    This decorator is used to handle errors of file write operations.
-    :param operation_desc: for example, "writing alignment results", etc.
-    :return: the decorated function with proper file writing errors' handling.
-    """
-    def decorator(func):
-        @functools.wraps(func) # maintain function attrs after wrapping
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except PermissionError:
-                raise AppErr(f"Error: Permission "
-                      f"denied to file while {operation_desc}.")
-            except OSError:
-                raise AppErr(f"Error: OS error occurred while {operation_desc}.")
-            except Exception as e:
-                raise AppErr(f"Error while {operation_desc}: {str(e)}")
-        return wrapper
-    return decorator
+# Older names, kept for the decorated functions and any external callers.
+handle_f_read = handle_file_errors
+handle_f_write = handle_file_errors
 
 ####################        File Reading         ####################
 
@@ -99,6 +96,7 @@ def import_fasta(filename) -> List[Reference]:
                     yield Reference(current_id, sequence)
     return list(read_fasta_helper())
 
+@handle_file_errors("reading a saved .kdb/.aln file")
 def load_saved_file(filename: str):
     """Unpickles a gzipped .kdb / .aln file. Files saved before version
     0.3.0 refer to the old top-level modules (kmers, aligner) and can't be
@@ -173,9 +171,10 @@ def is_pos_int(var) -> bool:
     """This function checks if a variable is a positive integer."""
     return isinstance(var, int) and var > 0
 
-def get_kmer_size_from_collection(kmer_collection: KmerCollection) -> int:
-    """This function extracts the kmer size from the collection."""
+def get_kmer_size_from_collection(
+        kmer_collection: KmerCollection) -> Optional[int]:
+    """This function extracts the kmer size from the collection, or returns
+    None if the collection has no k-mers."""
     if len(kmer_collection.get_all_kmers()) > 0:
         return len(next(iter(kmer_collection.get_all_kmers())).sequence)
-    else:
-        print("Collection does not contain any kmers.")
+    return None
