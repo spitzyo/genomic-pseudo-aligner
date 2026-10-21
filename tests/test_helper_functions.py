@@ -1,11 +1,11 @@
 ####################         IMPORTS          ####################
 
 import pytest
-from kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
 import gzip
-from helper_functions import (import_fasta, import_fastq, load_kdb_file,
-                              save_kmer_collection, is_pos_int, open_gz_file,
-                              AppErr)
+from genomic_pseudo_aligner.helper_functions import (
+    import_fasta, import_fastq, load_kdb_file, save_kmer_collection,
+    is_pos_int, open_gz_file, AppErr)
 
 ####################          TESTS           ####################
 

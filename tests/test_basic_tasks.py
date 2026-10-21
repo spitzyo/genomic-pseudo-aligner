@@ -2,13 +2,15 @@
 import os
 import sys
 import json
-from kmers import Reference, KmerCollection
-from aligner import Read, Aligner
-from helper_functions import save_kmer_collection
-from main import readargs
-from basic_tasks import (build_reference, dump_reference, reference_task,
-                         dumpref_task, create_kmer_details,
-                         create_genome_summary, dump_alignment)
+from genomic_pseudo_aligner.kmers import Reference, KmerCollection
+from genomic_pseudo_aligner.aligner import Read, Aligner
+from genomic_pseudo_aligner.helper_functions import save_kmer_collection
+from genomic_pseudo_aligner.cli import readargs
+from genomic_pseudo_aligner.tasks import (build_reference, dump_reference,
+                                          reference_task, dumpref_task,
+                                          create_kmer_details,
+                                          create_genome_summary,
+                                          dump_alignment)
 
 ####################          TESTS           ####################
 
@@ -133,20 +135,21 @@ def test_threshold_arguments_are_integers():
 
 
 ####################   DUMPALIGN LOADS THE REFERENCE ONCE   ####################
-import basic_tasks
-from basic_tasks import dumpalign_task, align_task, load_or_build_reference
+from genomic_pseudo_aligner import tasks
+from genomic_pseudo_aligner.tasks import (
+    dumpalign_task, align_task, load_or_build_reference)
 
 READS_FQ = "@r1\nACGTACGTAC\n+\nIIIIIIIIII\n"
 
 
 def _count_calls(monkeypatch, name):
-    """Wraps basic_tasks.<name> so each call is recorded."""
+    """Wraps tasks.<name> so each call is recorded."""
     calls = []
-    original = getattr(basic_tasks, name)
+    original = getattr(tasks, name)
     def wrapper(*args, **kwargs):
         calls.append(args)
         return original(*args, **kwargs)
-    monkeypatch.setattr(basic_tasks, name, wrapper)
+    monkeypatch.setattr(tasks, name, wrapper)
     return calls
 
 

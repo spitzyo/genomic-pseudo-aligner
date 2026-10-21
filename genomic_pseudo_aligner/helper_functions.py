@@ -3,8 +3,8 @@ import functools
 import gzip
 import pickle
 from typing import List, Callable
-from aligner import Read
-from kmers import Reference, KmerCollection
+from .aligner import Read
+from .kmers import Reference, KmerCollection
 import sys
 
 

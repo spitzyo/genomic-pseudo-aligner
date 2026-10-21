@@ -3,9 +3,9 @@ import gzip
 import pickle
 import json
 from typing import Dict, List, Optional, Tuple
-from aligner import Aligner
-from kmers import KmerCollection
-from helper_functions import (load_kdb_file, import_fasta,
+from .aligner import Aligner
+from .kmers import KmerCollection
+from .helper_functions import (load_kdb_file, import_fasta,
                               save_kmer_collection, is_pos_int,
                               import_fastq, get_kmer_size_from_collection,
                               handle_f_write, handle_f_read)

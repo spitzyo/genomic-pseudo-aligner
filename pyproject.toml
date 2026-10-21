@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "genomic-pseudo-aligner"
-version = "0.2.0"
+version = "0.3.0"
 description = "k-mer based pseudo-aligner with coverage and variant tracking"
 readme = "README.md"
 license = "MIT"
@@ -19,21 +19,10 @@ test = ["pytest>=7.0"]
 Homepage = "https://github.com/spitzyo/genomic-pseudo-aligner"
 
 [project.scripts]
-genomic-pseudo-aligner = "main:main"
+genomic-pseudo-aligner = "genomic_pseudo_aligner.cli:main"
 
 [tool.setuptools]
-# Flat top-level modules, so `python main.py` keeps working from a checkout
-# and .kdb/.aln pickles (which store module paths such as kmers.Reference)
-# load the same way from a checkout and from an installed copy.
-py-modules = [
-    "aligner",
-    "basic_tasks",
-    "extcoverage",
-    "extvartrack",
-    "helper_functions",
-    "kmers",
-    "main",
-]
+packages = ["genomic_pseudo_aligner"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

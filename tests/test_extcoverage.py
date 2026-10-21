@@ -1,6 +1,6 @@
 ####################         IMPORTS          ####################
-from extcoverage import Coverage
-from aligner import Read
+from genomic_pseudo_aligner.extcoverage import Coverage
+from genomic_pseudo_aligner.aligner import Read
 
 ####################          TESTS           ####################
 
