@@ -3,21 +3,29 @@ import gzip
 import pickle
 import json
 from typing import Dict, List, Optional, Tuple
-from .aligner import Aligner
+from .aligner import Aligner, Read
 from .kmers import KmerCollection
 from .helper_functions import (load_kdb_file, load_saved_file, import_fasta,
                               save_kmer_collection, is_pos_int,
                               import_fastq, get_kmer_size_from_collection,
-                              handle_f_write, handle_f_read)
+                              handle_f_write, handle_f_read, AppErr,
+                              UsageErr, warn)
 
 ####################      REFERENCE + DUMPREF     ####################
 
 def build_reference(filename: str, k: int,
                     kmer_collection: KmerCollection) -> None:
-    """Builds the reference kmer collection from a FASTA file."""
+    """Builds the reference kmer collection from a FASTA file. Warns about
+    genomes too short for k, and raises AppErr if no k-mer was built."""
     genomes = import_fasta(filename)
     for ref_genome in genomes:
+        if ref_genome.total_bases < k:
+            warn(f"genome '{ref_genome.identifier}' ({ref_genome.total_bases}"
+                 f" bases) is shorter than k={k}, so it has no k-mers")
         ref_genome.add_ref_kmers(k, kmer_collection)
+    if len(kmer_collection.get_all_kmers()) == 0:
+        raise AppErr(f"no k-mers could be built from {filename} with k={k} "
+                     f"(genomes shorter than k, or only N bases)")
 
 # Dump helper functions:
 def create_kmer_details(kmer_collection: KmerCollection) -> Dict:
@@ -63,8 +71,7 @@ def dump_reference(collection, is_file=True, output_file=None) -> None:
     """Dumps the reference k-mer collection to a JSON file or console."""
 
     if is_file:
-        with gzip.open(collection, 'rb'):
-            kmer_collection = load_kdb_file(collection)
+        kmer_collection = load_kdb_file(collection)
     else:
         kmer_collection = collection
 
@@ -98,9 +105,14 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
             reads, alignment_summary = data
         else:
             reads = data
+        if not (isinstance(reads, list)
+                and all(isinstance(read, Read) for read in reads)
+                and isinstance(alignment_summary, (dict, type(None)))):
+            raise AppErr(f"{alignfile} does not contain an alignment (it "
+                         f"holds a {type(data).__name__}); create .aln "
+                         f"files with the align task")
     if not alignfile and not reads:
-        print("No alignment file and no reads provided.")
-        return
+        raise AppErr("no alignment file and no reads to dump")
 
     if quality_filtering and aligner is not None:
         quality_stats = aligner.get_quality_stats()
@@ -156,27 +168,24 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         print(json.dumps(result, indent=4))
 
 @handle_f_read("loading or building reference db")
-def load_or_build_reference(args) -> Optional[Tuple[KmerCollection, int]]:
+def load_or_build_reference(args) -> Tuple[KmerCollection, int]:
     """Loads (-r) or builds (-g with -k) the kmer collection, once.
-    Returns (kmer collection, k), or None after printing an error.
-    If both are given, the pre-built .kdb file (-r) wins and k comes from
-    it; -g and -k are then ignored."""
+    Returns (kmer collection, k). If both are given, the pre-built .kdb
+    file (-r) wins and k comes from it; -g and -k are then ignored.
+    Raises UsageErr when neither is given."""
     if args.referencefile: # pre-built reference
         kmer_collection = load_kdb_file(args.referencefile)
-        k = (get_kmer_size_from_collection(kmer_collection)
-             if kmer_collection else None)
+        k = get_kmer_size_from_collection(kmer_collection)
         if not k:
-            print(f"Error: failed to load reference kmers from "
-                  f"kdb file {args.referencefile}.")
-            return None
+            raise AppErr(f"{args.referencefile} contains no k-mers; "
+                         f"rebuild it with the reference task")
     elif args.genomefile and is_pos_int(args.kmer_size): # building it
         kmer_collection = KmerCollection()
         build_reference(args.genomefile, args.kmer_size, kmer_collection)
         k = args.kmer_size
     else:
-        print("Error: a reference is needed: either -r, or -g with a "
-              "positive -k.")
-        return None
+        raise UsageErr("a reference is needed: either -r (a .kdb file), "
+                       "or -g (a FASTA file) with -k")
     return kmer_collection, k
 
 def run_alignment(args, kmer_collection: KmerCollection,
@@ -184,11 +193,11 @@ def run_alignment(args, kmer_collection: KmerCollection,
     """Aligns the reads in args.reads against an already loaded kmer
     collection, with the extensions enabled in args.
     Returns (reads, aligner)."""
-    unique_diff = int(args.unique_threshold) \
-        if (is_pos_int(args.unique_threshold)) else 1
-    total_diff = int(args.ambiguous_threshold) \
-        if (is_pos_int(args.ambiguous_threshold)) else 1
-    # unique and total diff set to default values if not ints / smaller than 0
+    # thresholds are validated by the CLI; default 1 when not given
+    unique_diff = args.unique_threshold \
+        if is_pos_int(args.unique_threshold) else 1
+    total_diff = args.ambiguous_threshold \
+        if is_pos_int(args.ambiguous_threshold) else 1
 
     # FASTA order, so the output lists genomes in the same order every run
     genomes = kmer_collection.get_ordered_genomes()
@@ -223,6 +232,22 @@ def _selected_genomes(args) -> Optional[List[str]]:
     """The genome ids given with --genomes, or None for all genomes."""
     return args.genomes.split(',') if args.genomes else None
 
+def _check_selected_genomes(args, kmer_collection: KmerCollection) -> None:
+    """Fails before any output if --genomes names a genome that isn't in
+    the reference, and warns if --genomes would have no effect."""
+    selected = _selected_genomes(args)
+    if selected is None:
+        return
+    if not (args.coverage or args.detect_variants):
+        warn("--genomes has no effect without --coverage or "
+             "--detect-variants")
+    known = [g.identifier for g in kmer_collection.get_ordered_genomes()]
+    unknown = [g for g in selected if g not in known]
+    if unknown:
+        shown = ", ".join(known[:10]) + (", ..." if len(known) > 10 else "")
+        raise UsageErr(f"--genomes: not in the reference: "
+                       f"{', '.join(unknown)} (the reference has: {shown})")
+
 
 ####################     Final Tasks      ####################
 
@@ -230,10 +255,14 @@ def _selected_genomes(args) -> Optional[List[str]]:
 def reference_task(args) -> None:
     """Executes the REFERENCE task."""
     if not args.genomefile or not args.referencefile or not args.kmer_size:
-        print("Error: missing or invalid arguments for 'reference' task.")
-        return
+        raise UsageErr("the reference task needs -g (input FASTA), -k and "
+                       "-r (output .kdb)")
     if not is_pos_int(args.kmer_size):
-        print("Error: kmer_size must be a positive integer.")
+        raise UsageErr(f"-k must be a positive integer, got "
+                       f"{args.kmer_size}")
+    if not args.referencefile.endswith('.kdb'):
+        raise UsageErr(f"-r {args.referencefile}: the output file name "
+                       f"must end in .kdb")
 
     kmer_collection = KmerCollection()
     build_reference(args.genomefile, args.kmer_size, kmer_collection)
@@ -241,28 +270,22 @@ def reference_task(args) -> None:
 
 @handle_f_read("loading reference for dumping")
 def dumpref_task(args) -> None:
-    """Performs the DUMPREF task."""
-    if args.referencefile and args.genomefile is None:
-        dump_reference(args.referencefile) # only dumping
-        return
-
-    if args.genomefile and args.kmer_size: # building and dumping
-        kmer_collection = KmerCollection()
-        build_reference(args.genomefile, args.kmer_size, kmer_collection)
-        dump_reference(kmer_collection, False)
+    """Performs the DUMPREF task: prints the reference loaded from -r, or
+    built from -g and -k (-r wins if both are given)."""
+    kmer_collection, _ = load_or_build_reference(args)
+    dump_reference(kmer_collection, False)
 
 @handle_f_read("loading alignment (.aln) file")
 @handle_f_write("saving alignment results")
-def align_task(args) -> Optional[Tuple[List, Aligner]]:
-    """Executes the ALIGN task. Returns (reads, aligner), or None after
-    printing an error."""
+def align_task(args) -> Tuple[List, Aligner]:
+    """Executes the ALIGN task. Returns (reads, aligner)."""
     if not args.reads:
-        print("Error: missing reads file for 'align' task.")
-        return None
+        raise UsageErr("the align task needs --reads (a FASTQ file)")
 
     reference = load_or_build_reference(args)
-    if reference is None:
-        return None
+    if not args.alignfile:
+        warn("no -a given, so the alignment won't be saved; use dumpalign "
+             "to print the results")
     reads, aligner = run_alignment(args, *reference)
 
     if args.alignfile:
@@ -281,9 +304,8 @@ def dumpalign_task(args) -> None:
         return
 
     if not args.reads:
-        print("Error: dumpalign needs either -a, or --reads with a "
-              "reference.")
-        return
+        raise UsageErr("the dumpalign task needs either -a (a saved .aln "
+                       "file), or --reads with a reference")
 
     # EXTQUALITY
     quality_filtering = args.min_read_quality is not None or \
@@ -292,8 +314,7 @@ def dumpalign_task(args) -> None:
 
     # kmer collection is retrieved from genomefile+kmer_s, or .kdb file:
     reference = load_or_build_reference(args) # sections 3.7 / 3.8
-    if reference is None:
-        return
+    _check_selected_genomes(args, reference[0])
     reads, aligner = run_alignment(args, *reference)
     dump_alignment(reads=reads, aligner=aligner,
                    quality_filtering=quality_filtering)
