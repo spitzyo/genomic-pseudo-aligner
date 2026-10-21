@@ -103,8 +103,7 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
         print("No alignment file and no reads provided.")
         return
 
-    if (quality_filtering and aligner and
-            hasattr(aligner, '_Aligner__quality_stats')):
+    if quality_filtering and aligner is not None:
         quality_stats = aligner.get_quality_stats()
         reads_stats.update({
             'filtered_quality_reads': quality_stats.get(
@@ -142,7 +141,7 @@ def dump_alignment(alignfile=None, reads=None, aligner=None,
                     'unique_reads': 0,
                     'ambiguous_reads': 0
                 }
-    elif aligner and hasattr(aligner, 'get_alignment_summary'):
+    elif aligner is not None:
         alignment_summary = aligner.alignment_summary
         for genome_id, stats in alignment_summary.items():
             if genome_id not in genome_mapping_summary:
@@ -244,10 +243,9 @@ def align_task(args):
     # EXTVARTRACK
     if args.detect_variants:
         aligner.enable_vartracking(
-            min_quality=args.min_variant_quality if
-            args.min_variant_quality else None,
-            min_coverage=args.min_variant_coverage
-            if args.min_variant_coverage else None)
+            min_quality=args.min_variant_quality,
+            min_coverage=args.min_variant_coverage,
+            min_af=args.min_variant_af)
 
     reads = import_fastq(args.reads) # loading reads from file
     for read in reads:

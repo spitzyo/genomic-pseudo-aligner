@@ -1,6 +1,7 @@
 ####################         IMPORTS          ####################
 import os
 import sys
+import json
 from kmers import Reference, KmerCollection
 from aligner import Read, Aligner
 from helper_functions import save_kmer_collection
@@ -109,3 +110,23 @@ def test_dump_alignment_with_aligner(tmp_path):
     output_file = tmp_path / "alignment_dump.json"
     dump_alignment(reads=[read], aligner=aligner, output_file=str(output_file))
     assert os.path.exists(output_file) # same here, check if file exists
+
+def test_dump_alignment_reports_quality_stats_and_all_genomes(capsys):
+    read = Read("test_read", "ACGT", "FFFF")
+    read.status = "unique"
+    read.mapped_genomes = ["genome1"]
+    aligner = Aligner(KmerCollection())
+    aligner.add_genome_to_summary("genome1")
+    aligner.add_genome_to_summary("genome2")  # no reads mapped here
+    aligner._quality_stats['filtered_quality_reads'] = 3
+    dump_alignment(reads=[read], aligner=aligner, quality_filtering=True)
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["Statistics"]["filtered_quality_reads"] == 3
+    assert result["Summary"]["genome2"] == {"unique_reads": 0,
+                                            "ambiguous_reads": 0}
+
+
+def test_threshold_arguments_are_integers():
+    args = readargs(["-t", "align", "-m", "3", "-p", "2"])
+    assert (args.unique_threshold, args.ambiguous_threshold) == (3, 2)

@@ -1,36 +1,72 @@
 # Genomic Pseudo-Aligner
 ![tests](https://github.com/spitzyo/genomic-pseudo-aligner/actions/workflows/tests.yml/badge.svg)
 
-A Python bioinformatics tool for genomic pseudo-alignment, variant calling (SNPs), and coverage analysis.
+A Python bioinformatics tool for genomic pseudo-alignment, variant calling (SNPs), and coverage analysis. Pure Python standard library, no runtime dependencies.
 
 ## 🚀 Features
 
-* **Pseudo-Alignment:** Efficient mapping using k-mer indexing and counting.
+* **Pseudo-Alignment:** Maps reads to one or more reference genomes by looking up their k-mers in a hash index and counting hits per genome. Reads from either strand are mapped.
 * **Quality Control (EXTQUALITY):** Filters low-quality reads and k-mers based on Phred33 scores before alignment.
-* **Coverage Analysis (EXTCOVERAGE):** Generates detailed statistics on unique vs. ambiguous mapped reads per position.
-* **Variant Tracking (EXTVARTRACK):** Identifies specific one-base differences (SNPs) between reads and reference genomes.
+* **Coverage Analysis (EXTCOVERAGE):** Per-position coverage from uniquely vs. ambiguously mapped reads.
+* **Variant Tracking (EXTVARTRACK):** Reports single-base differences (SNPs) between uniquely mapped reads and the reference, with depth, per-allele counts and allele frequency.
+
+## 📦 Installation
+
+```bash
+pip install git+https://github.com/spitzyo/genomic-pseudo-aligner
+genomic-pseudo-aligner --help
+```
+
+Or run it straight from a checkout, with no install:
+
+```bash
+git clone https://github.com/spitzyo/genomic-pseudo-aligner
+cd genomic-pseudo-aligner
+python3 main.py --help
+```
+
+`genomic-pseudo-aligner` and `python3 main.py` take the same arguments.
 
 ## 🛠️ System Architecture
 
 | Module | Description |
 | :--- | :--- |
-| `aligner.py` | Core class that manages the alignment process and accumulates status (unique/ambiguous/unmapped). |
-| `kmers.py` | Handles `Reference` genomes and the `KmerCollection` index. |
-| `extcoverage.py` | Calculates coverage depth and statistics for mapped positions. |
-| `extvartrack.py` | Tracks base changes to identify variants based on quality and coverage thresholds. |
-| `main.py` | The main script that handles command-line arguments and delegates work to the other modules. |
+| `aligner.py` | `Read` and `Aligner`: k-mer counting, strand choice, unique/ambiguous/unmapped decision, offset voting and mismatch check. |
+| `kmers.py` | `Reference` genomes and the `KmerCollection` index (k-mer → genomes and positions; genome identifier → `Reference`). |
+| `extcoverage.py` | Per-position coverage depth and statistics for mapped reads. |
+| `extvartrack.py` | Per-allele variant counts, read depth, and quality / depth / allele-frequency filters. |
+| `basic_tasks.py` | The `reference`, `dumpref`, `align` and `dumpalign` tasks. |
+| `main.py` | Command-line arguments; dispatches to the tasks. |
 
 ## 📊 Algorithm Design
 
-The pipeline follows a structured flow from reference indexing to variant detection:
-
 ![Flowchart of the Aligner](assets/flowchart.png)
+
+1. **Reference index.** Every k-mer of every reference genome (k-mers containing `N` are skipped) is stored in a dictionary mapping the k-mer to the genomes and 0-based positions where it occurs. A k-mer found in exactly one genome is *specific*.
+2. **Strand.** Each read is looked up twice: as given, and as its reverse complement. See [Strand handling](#-strand-handling).
+3. **Genome assignment.** For the chosen orientation, count specific k-mer hits and total k-mer hits per genome.
+   * No specific hits → `unmapped`.
+   * If the top genome leads the runner-up by at least `--unique-threshold` (default 1) specific hits, and no genome has more than `--ambiguous-threshold` (default 1) more total hits than it → `unique` to the top genome.
+   * Otherwise → `ambiguous`, mapped to every candidate genome.
+4. **Position.** Each k-mer hit votes for a read start position: the k-mer's reference position minus its offset in the read. The position with the most votes wins; ties go to the lower mismatch rate, then the smaller position. The start may be negative, and the read may run past the genome end. Only the bases that overlap the genome are compared.
+5. **Mismatch check.** The read is compared base by base with the reference at that position. A genome is kept only if at most 10% of the overlapping bases differ. A read with no genome left is `unmapped`.
+
+Reads with no usable k-mers (all contain `N`, all filtered by EXTQUALITY, or shorter than k) get the status `filtered`.
+
+## 🧭 Strand handling
+
+Reads may come from either strand of the reference. For every read the aligner counts k-mer hits for the sequence as given (`+`) and for its reverse complement (`-`). It keeps the orientation with more specific k-mer hits, then more total hits; a full tie keeps `+`. The result is stored on the read:
+
+* `read.strand`: `'+'`, `'-'`, or `None` when the read is unmapped or filtered.
+* `read.positions`: `{genome_id: start}`, the 0-based reference position of the first base of the read in the chosen orientation, for each mapped genome.
+
+Both are saved with the reads in the `.aln` file.
+
+Everything after the strand choice (position voting, mismatch check, coverage and variant calling) uses the chosen orientation. For a minus-strand read the sequence is reverse complemented and its quality string reversed, so variants are always reported in reference orientation: the reference base, alternate base, position and base quality all refer to the reference's forward strand.
 
 ## 🧬 Variant Detection (SNP)
 
-The tool detects Single Nucleotide Polymorphisms (SNPs) by comparing aligned reads to the reference. It looks for positions where the read base differs from the reference, provided the quality score and coverage meet the thresholds.
-
-For example:
+Variant detection uses only **uniquely mapped** reads. Each one is compared with the reference at its aligned position:
 
 ```text
 Reference Genome:  ... A  T  C  G  [T]  A  G  C ...
@@ -40,11 +76,10 @@ Aligned Read:      ... A  T  C  G  [A]  A  G  C ...
                                SNP Detected
 ```
 
-## 💡 Key Design and Coding Decisions
-
-* **Decorators for I/O:** Custom decorators (`@handle_f_read`, `@handle_f_write`) were implemented to improve error handling across file operations, keeping the code clean.
-* **Encapsulation:** Extensions (Coverage, Variant Tracking) are isolated in their own modules/classes to minimize dependencies and allow the core `Aligner` to remain lightweight and simple.
-* **O(1) Lookups:** `KmerCollection` uses Hashmaps (Python dictionaries) for constant-time lookups of k-mers, while maintaining a separate list to preserve genome order for output consistency.
+* **Depth** at a position is the number of uniquely mapped reads covering it, whether they show the reference base or not.
+* Each alternate base at a position is counted separately: if some reads show `A` and others `G` where the reference has `C`, you get two variants.
+* A base below `--min-variant-quality` (default 20), or an `N`, still counts toward depth but not toward any allele count.
+* A variant is reported if `depth >= --min-variant-coverage` (default 10) and `allele_frequency >= --min-variant-af` (default 0).
 
 ## 💻 Usage Examples
 * Note: The commands below use example filenames. Please replace them with your own data.
@@ -53,46 +88,146 @@ Aligned Read:      ... A  T  C  G  [A]  A  G  C ...
 Align reads to a reference genome and save the result to an `.aln` file.
 
 ```bash
-python3 main.py -t align \
+genomic-pseudo-aligner -t align \
   -g example_ref_mid.fa \
   -k 12 \
   -a output.aln \
   --reads s_example_k150_n10k.fq
 ```
 
-### 2. Alignment with Quality Filtering & Variant Detection
-Run the pipeline with specific quality thresholds and enable the variant tracker.
+### 2. Alignment with Variant Detection
+Report variants seen in at least 5 reads covering the position, at an allele frequency of 20% or more.
 
 ```bash
-python3 main.py -t dumpalign \
+genomic-pseudo-aligner -t dumpalign \
   -g reference_for_vartrack.fa \
   -k 5 \
   --reads reads_for_vartrack.fq \
   --detect-variants \
-  --min-variant-coverage 1 \
+  --min-variant-coverage 5 \
+  --min-variant-af 0.2 \
   --min-variant-quality 20
 ```
 
 ### 3. Coverage Statistics
-Analyze the coverage of an existing alignment.
 
 ```bash
-python3 main.py -t dumpalign \
+genomic-pseudo-aligner -t dumpalign \
   -g example_ref_mid.fa \
   -k 12 \
   --reads s_example_k150_n10k.fq \
   --coverage
 ```
 
+### Tasks
+
+| Task | What it does |
+| :--- | :--- |
+| `reference` | Builds the k-mer index from `-g` (FASTA) with `-k` and saves it to `-r` (`.kdb`). |
+| `dumpref` | Prints the index from `-r`, or builds it from `-g`/`-k` and prints it. |
+| `align` | Aligns `--reads` (FASTQ) against `-r`, or against `-g`/`-k`, and saves reads and summary to `-a` (`.aln`). |
+| `dumpalign` | Prints alignment statistics from `-a`, or aligns `--reads` and prints them, plus coverage / variants when enabled. |
+
+### Options
+
+| Option | Meaning |
+| :--- | :--- |
+| `-m`, `--unique-threshold` | Specific k-mer lead the top genome needs over the runner-up to be `unique` (default 1). |
+| `-p`, `--ambiguous-threshold` | Max total k-mer lead another genome may have over the top genome before the read is `ambiguous` (default 1). |
+| `--min-read-quality` | Drop reads whose mean Phred quality is below this. |
+| `--min-kmer-quality` | Drop k-mers whose mean Phred quality is below this. |
+| `--max-genomes` | Drop k-mers found in more than this many genomes. |
+| `--coverage` | Print coverage statistics. `--full-coverage` adds per-position arrays; `--min-coverage` (default 1) is the depth a base needs to count as covered. |
+| `--genomes` | Comma-separated genome identifiers to limit coverage / variant output to. |
+| `--detect-variants` | Print variants. See `--min-variant-quality`, `--min-variant-coverage`, `--min-variant-af` above. |
+
+## 📄 Output Fields
+
+All dumps are JSON printed to stdout.
+
+### `dumpref`
+
+* `Kmers.<kmer>.<genome_id>`: sorted 0-based positions of the k-mer in that genome.
+* `Summary.<genome_id>`:
+  * `total_bases`: genome length.
+  * `unique_kmers`: distinct k-mers found only in this genome.
+  * `multi_mapping_kmers`: distinct k-mers also found in other genomes.
+
+### `dumpalign`: alignment
+
+* `Statistics`:
+  * `unique_mapped_reads`, `ambiguous_mapped_reads`, `unmapped_reads`: read counts by status (`filtered` reads are not counted here).
+  * With `--min-read-quality`, `--min-kmer-quality` or `--max-genomes`:
+    * `filtered_quality_reads`: reads dropped for low mean quality.
+    * `filtered_quality_kmers`: k-mers dropped for low quality or because they contain `N`.
+    * `filtered_hr_kmers`: k-mers dropped by `--max-genomes` (or not in the index).
+* `Summary.<genome_id>`: `unique_reads` and `ambiguous_reads` mapped to the genome. Genomes with no reads are listed with zeros.
+
+### `dumpalign --coverage`
+
+Coverage counts every reference base a mapped read covers at its chosen position (clipped to the genome). An ambiguous read adds coverage to each genome it maps to.
+
+* `Coverage.<genome_id>`:
+  * `covered_bases_unique` / `covered_bases_ambiguous`: bases covered by at least `--min-coverage` unique / ambiguous reads.
+  * `mean_coverage_unique` / `mean_coverage_ambiguous`: mean depth over the whole genome, rounded to 1 decimal.
+* `Details.<genome_id>` (with `--full-coverage` only): `unique_cov` and `ambiguous_cov`, one depth value per reference position.
+
+### `dumpalign --detect-variants`
+
+```json
+{
+    "Variants": {
+        "g1": {
+            "200": [
+                {"reference": "C", "alternate": "A", "depth": 10, "ref_count": 6,
+                 "alt_count": 3, "allele_frequency": 0.3, "quality_score": 40.0},
+                {"reference": "C", "alternate": "G", "depth": 10, "ref_count": 6,
+                 "alt_count": 1, "allele_frequency": 0.1, "quality_score": 40.0}
+            ]
+        }
+    },
+    "Statistics": {
+        "g1": {"total_variants": 2, "reported_variants": 2, "filtered_variants": 0}
+    }
+}
+```
+
+* `Variants.<genome_id>.<position>`: a list with one entry per alternate base at that 0-based reference position:
+  * `reference`: reference base (forward strand).
+  * `alternate`: alternate base (forward strand).
+  * `depth`: uniquely mapped reads covering the position.
+  * `ref_count`: those reads showing the reference base.
+  * `alt_count`: those reads showing this alternate base at or above `--min-variant-quality`.
+  * `allele_frequency`: `alt_count / depth`, rounded to 4 decimals.
+  * `quality_score`: mean Phred quality of the bases counted in `alt_count`.
+  * `depth - ref_count - (sum of alt_count)` is the number of reads showing an `N` or a low-quality non-reference base.
+* `Statistics.<genome_id>`, counting (position, alternate base) pairs:
+  * `total_variants`: candidates seen.
+  * `reported_variants`: candidates that pass the depth and allele-frequency filters.
+  * `filtered_variants`: candidates that don't (`total_variants - reported_variants`).
+
+## 💡 Key Design and Coding Decisions
+
+* **Decorators for I/O:** Custom decorators (`@handle_f_read`, `@handle_f_write`) handle errors across file operations, keeping the code clean.
+* **Encapsulation:** Extensions (Coverage, Variant Tracking) live in their own modules/classes so the core `Aligner` stays small.
+* **O(1) Lookups:** `KmerCollection` uses dictionaries for constant-time k-mer and genome lookups, plus a list that preserves the FASTA genome order for output.
+* **Depth without per-base arrays:** the variant tracker stores each read's start and end and answers depth queries with binary search, so memory grows with the number of reads, not the genome length.
+
 ## 🛠️ Development & Testing
-To run the comprehensive test suite, install dependencies and run pytest:
 
 ```bash
 pip install -r requirements.txt
 python3 -m pytest
 ```
 
+Benchmark on a synthetic genome (1 Mb by default):
+
+```bash
+python3 benchmarks/bench_align.py --reads 1000 --minus-fraction 0.5
+```
+
 ## ⚠️ Algorithm Limitations
-As a pseudo-aligner, this tool is designed for speed and coverage estimation, not exact alignment. 
-* **Indels:** It does not handle Insertions or Deletions (gaps). It assumes perfect contiguous k-mer matches.
-* **Heuristic:** The mapping is based on k-mer voting only.
+As a pseudo-aligner, this tool is designed for speed and coverage estimation, not exact alignment.
+* **Indels:** Insertions and deletions are not handled. A read is compared with the reference base by base at a single offset, so an indel shows up as a run of mismatches and the read may fail the 10% mismatch check.
+* **Heuristic:** Genome assignment is based on k-mer hit counts only.
+* **Substitutions only:** Variant tracking reports single-base substitutions.

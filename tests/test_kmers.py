@@ -76,3 +76,23 @@ def test_kmers_for_genome():
     assert "ACG" in genome1_kmers
     assert "CGT" in genome1_kmers
     assert "TGC" not in genome1_kmers # it should only be a part of genome2
+
+def test_get_genome_by_identifier():
+    collection = KmerCollection()
+    reference1 = Reference("genome1", "ACGTACGT")
+    reference2 = Reference("genome2", "TGCATGCA")
+    reference1.add_ref_kmers(3, collection)
+    reference2.add_ref_kmers(3, collection)
+    assert collection.get_genome("genome1") is reference1
+    assert collection.get_genome("genome2") is reference2
+    assert collection.get_genome("missing") is None
+    assert collection.get_all_genomes() == {reference1, reference2}
+
+
+def test_get_genome_on_collection_pickled_before_index():
+    """Older .kdb files have no identifier index; it is rebuilt lazily."""
+    collection = KmerCollection()
+    reference1 = Reference("genome1", "ACGTACGT")
+    reference1.add_ref_kmers(3, collection)
+    del collection.__dict__["_genomes_by_id"]  # simulate an old pickle
+    assert collection.get_genome("genome1") is reference1

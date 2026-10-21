@@ -20,3 +20,7 @@ env/
 
 # Ignore PyCharm files
 .idea/
+# Ignore packaging build output
+build/
+dist/
+*.egg-info/
