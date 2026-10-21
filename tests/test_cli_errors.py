@@ -33,13 +33,18 @@ def run_cli(capsys, *argv):
 
 
 def assert_fails(result, code, *expected_in_stderr):
-    """Checks the exit status, a single error on stderr, and empty stdout."""
+    """Checks the exit status, empty stdout, and exactly one error line on
+    stderr. Other stderr lines may only be warnings, argparse's usage
+    block, or the --help hint after a usage error."""
     status, out, err = result
     assert status == code, err
     assert out == ""
-    # argparse prints a usage block first; our own errors start the output
-    assert err.startswith(ERROR) or err.startswith("usage:"), err
-    assert err.count(ERROR) == 1, err
+    lines = err.splitlines()
+    error_lines = [line for line in lines if line.startswith(ERROR)]
+    assert len(error_lines) == 1, err
+    for line in lines:
+        assert (line.startswith((ERROR, WARNING, "usage:", " ", "Run '"))
+                ), f"unexpected stderr line: {line!r}"
     for text in expected_in_stderr:
         assert text in err, err
 
@@ -175,3 +180,100 @@ def test_genomes_without_coverage_or_variants_warns(files, capsys):
                                "--genomes", "g1")
     assert status == 0 and json.loads(out)
     assert err.startswith(WARNING) and "--genomes has no effect" in err
+
+
+####################        BAD FASTA        ####################
+
+def _reference(capsys, fasta, k=5):
+    return run_cli(capsys, "-t", "reference", "-g", fasta, "-k", k,
+                   "-r", fasta.parent / "out.kdb")
+
+
+@pytest.mark.parametrize("name, content, expected", [
+    ("notes.txt", f">g1\n{GENOME}\n", "is not a FASTA file"),
+    ("ref.fa.zip", f">g1\n{GENOME}\n", "is not a FASTA file"),
+])
+def test_fasta_with_wrong_extension_exit_2(files, capsys, name, content,
+                                           expected):
+    (files / name).write_text(content)
+    assert_fails(_reference(capsys, files / name), 2, name, expected)
+
+
+@pytest.mark.parametrize("content, expected", [
+    ("", "has no usable FASTA records (the file is empty)"),
+    ("\n\n", "has no usable FASTA records (the file is empty)"),
+    (f"{GENOME}\n", "line 1 comes before the first '>' header"),
+    (f"@r1\n{READ}\n+\n{'I' * len(READ)}\n",  # a FASTQ named .fa
+     "line 1 comes before the first '>' header"),
+    (">bad\nILOVEINTRO\n", "has no usable FASTA records"),
+    (">g1\n>g2\n", "has no usable FASTA records"),
+])
+def test_unusable_fasta_exit_1(files, capsys, content, expected):
+    (files / "bad.fa").write_text(content)
+    assert_fails(_reference(capsys, files / "bad.fa"), 1, "bad.fa", expected)
+    assert not (files / "out.kdb").exists()  # no empty reference written
+
+
+def test_fasta_genomes_all_shorter_than_k_exit_1(files, capsys):
+    (files / "short.fa").write_text(">tiny\nACGT\n")
+    status, out, err = _reference(capsys, files / "short.fa")
+    assert (status, out) == (1, "")
+    assert WARNING + "genome 'tiny' (4 bases) is shorter than k=5" in err
+    assert ERROR + "no k-mers could be built" in err
+
+
+def test_fasta_bad_records_are_skipped_with_warnings(files, capsys):
+    (files / "mixed.fa").write_text(
+        f">good\n{GENOME}\n>bad\nACGT\nACXT\n>\n{GENOME}\n>empty\n")
+    status, out, err = run_cli(capsys, "-t", "dumpref",
+                               "-g", files / "mixed.fa", "-k", 5)
+    assert status == 0
+    assert list(json.loads(out)["Summary"]) == ["good"]
+    assert err.count(WARNING) == 3, err
+    assert "skipped 'bad': line 5 has characters other than A, C, G, T, N" \
+        in err
+    assert "skipped the record at line 6: empty '>' header" in err
+    assert "skipped 'empty': no sequence" in err
+
+
+####################        BAD FASTQ        ####################
+
+def _dumpalign(capsys, files, reads):
+    return run_cli(capsys, "-t", "dumpalign", "-g", files / "ref.fa",
+                   "-k", 5, "--reads", reads)
+
+
+def test_fastq_with_wrong_extension_exit_2(files, capsys):
+    (files / "reads.txt").write_text("@r1\nACGT\n+\nIIII\n")
+    assert_fails(_dumpalign(capsys, files, files / "reads.txt"), 2,
+                 "reads.txt", "is not a FASTQ file")
+
+
+@pytest.mark.parametrize("content, expected", [
+    ("", "has no valid FASTQ reads (the file is empty)"),
+    ("@r1\nACGT\n+\nII\n", "line 1: the quality and sequence lengths differ"),
+    ("r1\nACGT\n+\nIIII\n", "line 1: the header doesn't start with '@'"),
+    ("@r1\nACGT\nIIII\n", "line 1: the third line doesn't start with '+'"),
+    ("@r1\nACXT\n+\nIIII\n", "line 1: the sequence has characters other"),
+    ("@r1\n\n+\n\n", "line 1: the sequence is empty"),
+    (f">g1\n{GENOME}\n", "line 1: the header doesn't start with '@'"),
+])
+def test_unusable_fastq_exit_1(files, capsys, content, expected):
+    (files / "bad.fq").write_text(content)
+    status, out, err = _dumpalign(capsys, files, files / "bad.fq")
+    assert (status, out) == (1, "")
+    assert ERROR + f"{files / 'bad.fq'} has no valid FASTQ reads" in err
+    assert expected in err
+
+
+def test_fastq_bad_records_are_skipped_with_one_warning(files, capsys):
+    good = f"@r1\n{READ}\n+\n{'I' * len(READ)}\n"
+    (files / "mixed.fq").write_text(
+        good + "@bad1\nACGT\n+\nII\n" + "\n" + good.replace("r1", "r2")
+        + "@bad2\nACXT\n+\nIIII\n")
+    status, out, err = _dumpalign(capsys, files, files / "mixed.fq")
+    assert status == 0
+    assert json.loads(out)["Statistics"]["unique_mapped_reads"] == 2
+    assert err.count(WARNING) == 1, err
+    assert "skipped 2 malformed record(s); first at line 5: the quality " \
+        "and sequence lengths differ" in err

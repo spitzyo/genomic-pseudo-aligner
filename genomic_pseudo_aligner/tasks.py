@@ -15,10 +15,17 @@ from .helper_functions import (load_kdb_file, load_saved_file, import_fasta,
 
 def build_reference(filename: str, k: int,
                     kmer_collection: KmerCollection) -> None:
-    """Builds the reference kmer collection from a FASTA file."""
+    """Builds the reference kmer collection from a FASTA file. Warns about
+    genomes too short for k, and raises AppErr if no k-mer was built."""
     genomes = import_fasta(filename)
     for ref_genome in genomes:
+        if ref_genome.total_bases < k:
+            warn(f"genome '{ref_genome.identifier}' ({ref_genome.total_bases}"
+                 f" bases) is shorter than k={k}, so it has no k-mers")
         ref_genome.add_ref_kmers(k, kmer_collection)
+    if len(kmer_collection.get_all_kmers()) == 0:
+        raise AppErr(f"no k-mers could be built from {filename} with k={k} "
+                     f"(genomes shorter than k, or only N bases)")
 
 # Dump helper functions:
 def create_kmer_details(kmer_collection: KmerCollection) -> Dict:
