@@ -130,3 +130,97 @@ def test_dump_alignment_reports_quality_stats_and_all_genomes(capsys):
 def test_threshold_arguments_are_integers():
     args = readargs(["-t", "align", "-m", "3", "-p", "2"])
     assert (args.unique_threshold, args.ambiguous_threshold) == (3, 2)
+
+
+####################   DUMPALIGN LOADS THE REFERENCE ONCE   ####################
+import basic_tasks
+from basic_tasks import dumpalign_task, align_task, load_or_build_reference
+
+READS_FQ = "@r1\nACGTACGTAC\n+\nIIIIIIIIII\n"
+
+
+def _count_calls(monkeypatch, name):
+    """Wraps basic_tasks.<name> so each call is recorded."""
+    calls = []
+    original = getattr(basic_tasks, name)
+    def wrapper(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(basic_tasks, name, wrapper)
+    return calls
+
+
+def _inputs(tmp_path):
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">from_fasta\nACGTACGTACGT\n")
+    reads = tmp_path / "reads.fq"
+    reads.write_text(READS_FQ)
+    return str(fasta), str(reads)
+
+
+def test_dumpalign_builds_fasta_reference_once(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    builds = _count_calls(monkeypatch, "build_reference")
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3",
+                             "--reads", reads, "--coverage"]))
+    out = capsys.readouterr().out
+    assert len(builds) == 1
+    assert "unique_mapped_reads" in out and "Coverage" in out
+
+
+def test_dumpalign_loads_kdb_once(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    kdb = str(tmp_path / "ref.kdb")
+    reference_task(readargs(["-t", "reference", "-g", fasta, "-k", "3",
+                             "-r", kdb]))
+    loads = _count_calls(monkeypatch, "load_kdb_file")
+    dumpalign_task(readargs(["-t", "dumpalign", "-r", kdb,
+                             "--reads", reads]))
+    assert len(loads) == 1
+    assert "unique_mapped_reads" in capsys.readouterr().out
+
+
+def test_kdb_wins_over_fasta_when_both_given(tmp_path, monkeypatch, capsys):
+    fasta, reads = _inputs(tmp_path)
+    other_fasta = tmp_path / "other.fa"
+    other_fasta.write_text(">from_kdb\nACGTACGTACGT\n")
+    kdb = str(tmp_path / "ref.kdb")
+    reference_task(readargs(["-t", "reference", "-g", str(other_fasta),
+                             "-k", "3", "-r", kdb]))
+    builds = _count_calls(monkeypatch, "build_reference")
+
+    collection, k = load_or_build_reference(
+        readargs(["-t", "align", "-g", fasta, "-k", "5", "-r", kdb]))
+    assert k == 3  # from the .kdb, not -k
+    assert [g.identifier for g in collection.get_ordered_genomes()] == [
+        "from_kdb"]
+
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3",
+                             "-r", kdb, "--reads", reads]))
+    out = capsys.readouterr().out
+    assert builds == []
+    assert "from_kdb" in out and "from_fasta" not in out
+
+
+def test_dumpalign_without_reads_prints_error(tmp_path, capsys):
+    fasta, _ = _inputs(tmp_path)
+    dumpalign_task(readargs(["-t", "dumpalign", "-g", fasta, "-k", "3"]))
+    assert "Error: dumpalign needs" in capsys.readouterr().out
+
+
+def test_missing_reference_prints_error(tmp_path, capsys):
+    _, reads = _inputs(tmp_path)
+    assert align_task(readargs(["-t", "align", "--reads", reads])) is None
+    assert "Error: a reference is needed" in capsys.readouterr().out
+
+
+def test_align_saves_aln_that_dumpalign_reads(tmp_path, capsys):
+    fasta, reads = _inputs(tmp_path)
+    aln = str(tmp_path / "out.aln")
+    result = align_task(readargs(["-t", "align", "-g", fasta, "-k", "3",
+                                  "--reads", reads, "-a", aln]))
+    reads_out, aligner = result
+    assert reads_out[0].status == "unique"
+    capsys.readouterr()
+    dumpalign_task(readargs(["-t", "dumpalign", "-a", aln]))
+    assert '"unique_mapped_reads": 1' in capsys.readouterr().out
