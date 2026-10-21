@@ -125,3 +125,8 @@ def test_dump_alignment_reports_quality_stats_and_all_genomes(capsys):
     assert result["Statistics"]["filtered_quality_reads"] == 3
     assert result["Summary"]["genome2"] == {"unique_reads": 0,
                                             "ambiguous_reads": 0}
+
+
+def test_threshold_arguments_are_integers():
+    args = readargs(["-t", "align", "-m", "3", "-p", "2"])
+    assert (args.unique_threshold, args.ambiguous_threshold) == (3, 2)
