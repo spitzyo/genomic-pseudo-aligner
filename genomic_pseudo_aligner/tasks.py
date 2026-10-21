@@ -180,11 +180,11 @@ def run_alignment(args, kmer_collection: KmerCollection,
     """Aligns the reads in args.reads against an already loaded kmer
     collection, with the extensions enabled in args.
     Returns (reads, aligner)."""
-    unique_diff = int(args.unique_threshold) \
-        if (is_pos_int(args.unique_threshold)) else 1
-    total_diff = int(args.ambiguous_threshold) \
-        if (is_pos_int(args.ambiguous_threshold)) else 1
-    # unique and total diff set to default values if not ints / smaller than 0
+    # thresholds are validated by the CLI; default 1 when not given
+    unique_diff = args.unique_threshold \
+        if is_pos_int(args.unique_threshold) else 1
+    total_diff = args.ambiguous_threshold \
+        if is_pos_int(args.ambiguous_threshold) else 1
 
     # FASTA order, so the output lists genomes in the same order every run
     genomes = kmer_collection.get_ordered_genomes()
@@ -218,6 +218,22 @@ def run_alignment(args, kmer_collection: KmerCollection,
 def _selected_genomes(args) -> Optional[List[str]]:
     """The genome ids given with --genomes, or None for all genomes."""
     return args.genomes.split(',') if args.genomes else None
+
+def _check_selected_genomes(args, kmer_collection: KmerCollection) -> None:
+    """Fails before any output if --genomes names a genome that isn't in
+    the reference, and warns if --genomes would have no effect."""
+    selected = _selected_genomes(args)
+    if selected is None:
+        return
+    if not (args.coverage or args.detect_variants):
+        warn("--genomes has no effect without --coverage or "
+             "--detect-variants")
+    known = [g.identifier for g in kmer_collection.get_ordered_genomes()]
+    unknown = [g for g in selected if g not in known]
+    if unknown:
+        shown = ", ".join(known[:10]) + (", ..." if len(known) > 10 else "")
+        raise UsageErr(f"--genomes: not in the reference: "
+                       f"{', '.join(unknown)} (the reference has: {shown})")
 
 
 ####################     Final Tasks      ####################
@@ -285,6 +301,7 @@ def dumpalign_task(args) -> None:
 
     # kmer collection is retrieved from genomefile+kmer_s, or .kdb file:
     reference = load_or_build_reference(args) # sections 3.7 / 3.8
+    _check_selected_genomes(args, reference[0])
     reads, aligner = run_alignment(args, *reference)
     dump_alignment(reads=reads, aligner=aligner,
                    quality_filtering=quality_filtering)

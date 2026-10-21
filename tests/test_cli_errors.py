@@ -135,3 +135,43 @@ def test_process_exit_status_and_streams(files, entry_point):
     assert result.stdout == ""
     assert result.stderr.startswith(ERROR)
     assert "missing.fa: No such file or directory" in result.stderr
+
+
+####################  INVALID ARGUMENT VALUES  ####################
+
+@pytest.mark.parametrize("option, value, expected", [
+    ("-k", "0", "must be a positive integer, got '0'"),
+    ("-k", "abc", "must be a positive integer, got 'abc'"),
+    ("-k", "2.5", "must be a positive integer, got '2.5'"),
+    ("-m", "-1", "must be a positive integer"),
+    ("-p", "0", "must be a positive integer"),
+    ("--max-genomes", "0", "must be a positive integer"),
+    ("--min-coverage", "0", "must be a positive integer"),
+    ("--min-read-quality", "-5", "must be an integer >= 0"),
+    ("--min-kmer-quality", "x", "must be an integer >= 0"),
+    ("--min-variant-coverage", "-1", "must be an integer >= 0"),
+    ("--min-variant-quality", "-0.5", "must be a number >= 0"),
+    ("--min-variant-af", "2", "must be a number between 0 and 1"),
+    ("--min-variant-af", "high", "must be a number between 0 and 1"),
+])
+def test_invalid_option_value_exit_2(files, capsys, option, value, expected):
+    result = run_cli(capsys, "-t", "dumpalign", "-g", files / "ref.fa",
+                     "-k", 5, "--reads", files / "reads.fq", option, value)
+    assert_fails(result, 2, option, expected)
+
+
+def test_unknown_genome_fails_before_any_output(files, capsys):
+    assert_fails(run_cli(capsys, "-t", "dumpalign", "-g", files / "ref.fa",
+                         "-k", 5, "--reads", files / "reads.fq",
+                         "--coverage", "--genomes", "g1,nope"),
+                 2, "--genomes: not in the reference: nope",
+                 "the reference has: g1")
+
+
+def test_genomes_without_coverage_or_variants_warns(files, capsys):
+    status, out, err = run_cli(capsys, "-t", "dumpalign",
+                               "-g", files / "ref.fa", "-k", 5,
+                               "--reads", files / "reads.fq",
+                               "--genomes", "g1")
+    assert status == 0 and json.loads(out)
+    assert err.startswith(WARNING) and "--genomes has no effect" in err
