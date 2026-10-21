@@ -150,6 +150,31 @@ Where a task needs a reference, give either `-r` (a `.kdb` file) or `-g` with `-
 | `--genomes` | Comma-separated genome identifiers to limit coverage / variant output to. |
 | `--detect-variants` | Print variants. See `--min-variant-quality`, `--min-variant-coverage`, `--min-variant-af` above. |
 
+`-k`, `-m`, `-p`, `--max-genomes` and `--min-coverage` must be positive integers; `--min-read-quality`, `--min-kmer-quality` and `--min-variant-coverage` integers >= 0; `--min-variant-quality` a number >= 0; `--min-variant-af` a number from 0 to 1. Ids in `--genomes` must exist in the reference.
+
+## 🚦 Errors, Warnings and Exit Status
+
+stdout only ever holds results (the JSON dumps). Errors and warnings go to stderr, one line each:
+
+```text
+genomic-pseudo-aligner: error: ref.fa: No such file or directory (while loading FASTA file)
+genomic-pseudo-aligner: warning: reads.fq: skipped 2 malformed record(s); first at line 5: the quality and sequence lengths differ
+```
+
+| Exit status | Meaning |
+| :--- | :--- |
+| `0` | Success. There may still be warnings on stderr. |
+| `1` | The task failed: an input file is missing, unreadable, corrupt or has nothing usable, or an output file can't be written. |
+| `2` | Invalid command line: unknown task, missing or invalid option, wrong file extension, unknown `--genomes` id. |
+
+**Input checks:**
+
+* **FASTA** (`-g`): the first non-empty line must be a `>` header. A record with an empty header, no sequence, or any character other than `A`, `C`, `G`, `T`, `N` (lowercase included) is skipped with a warning. The run fails if no record is usable, or if no k-mer can be built (every genome shorter than `-k`). No `.kdb` is written on failure.
+* **FASTQ** (`--reads`): records with a header not starting with `@`, a third line not starting with `+`, an empty sequence, characters other than `ACGTN`, or a quality string of a different length are skipped, with one warning giving the count and the first problem. The run fails if no read is usable.
+* **`.kdb` / `.aln`**: a file that is not one of ours, is corrupt or truncated, holds the wrong kind of data (e.g. an `.aln` given as `-r`), or was saved before 0.3.0 fails with a message saying which.
+
+Warnings without failure: `align` without `-a` (nothing is saved), `--genomes` without `--coverage` or `--detect-variants` (no effect), and a genome shorter than `-k` (no k-mers).
+
 ## 📄 Output Fields
 
 All dumps are JSON printed to stdout.
