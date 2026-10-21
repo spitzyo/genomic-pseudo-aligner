@@ -140,3 +140,60 @@ def test_read_overhanging_genome_end():
         "unique_cov"]
     assert unique_cov == [0] * 45 + [1] * 15
     assert aligner.dump_variants()["Variants"] == {}
+
+
+####################          STRANDS          ####################
+from aligner import reverse_complement
+
+
+def test_reverse_complement():
+    assert reverse_complement("AACGTN") == "NACGTT"
+
+
+def test_forward_and_reverse_complement_reads_both_map_unique():
+    k = 8
+    genome_seq = _random_genome(80, k, seed=5)
+    aligner = _aligner_for(genome_seq, k)
+    forward = Read("fwd", genome_seq[20:50], [30] * 30)
+    reverse = Read("rev", reverse_complement(genome_seq[20:50]), [30] * 30)
+    aligner.align_read(forward, k)
+    aligner.align_read(reverse, k)
+
+    assert (forward.status, forward.strand) == ("unique", "+")
+    assert (reverse.status, reverse.strand) == ("unique", "-")
+    assert forward.positions == reverse.positions == {"g1": 20}
+
+
+def test_unmapped_read_has_no_strand():
+    k = 8
+    aligner = _aligner_for(_random_genome(80, k, seed=5), k)
+    read = Read("r", "A" * 30, [30] * 30)
+    aligner.align_read(read, k)
+    assert read.status == "unmapped"
+    assert read.strand is None
+
+
+def test_minus_strand_variant_reported_in_reference_orientation():
+    k = 8
+    genome_seq = _random_genome(80, k, seed=6)
+    variant_pos = 35  # read covers 20..49, so this is read index 15
+    ref_base = genome_seq[variant_pos]
+    alt_base = "A" if ref_base != "A" else "C"
+    fragment = (genome_seq[20:variant_pos] + alt_base
+                + genome_seq[variant_pos + 1:50])
+    # Forward-orientation qualities: only the variant base is high quality.
+    fwd_quality = [5] * 30
+    fwd_quality[variant_pos - 20] = 35
+    # The sequencer reported the minus strand: reverse complement the bases
+    # and reverse the qualities.
+    read = Read("rev", reverse_complement(fragment), fwd_quality[::-1])
+
+    aligner = _aligner_for(genome_seq, k)
+    aligner.enable_vartracking(min_quality=20, min_coverage=1)
+    aligner.align_read(read, k)
+
+    assert (read.status, read.strand) == ("unique", "-")
+    variants = aligner._variant_tracker.get_variants("g1")
+    assert list(variants) == [variant_pos]
+    assert variants[variant_pos].get_bases() == (ref_base, alt_base)
+    assert variants[variant_pos].quality_score == 35

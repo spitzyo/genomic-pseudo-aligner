@@ -7,8 +7,13 @@ from extvartrack import VariantTracker
 
 ####################         CONSTANTS        ####################
 MAX_MISMATCH_THRESHOLD = 0.1  # 10% maximum allowed error rate
+_COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 
 ####################         FUNCTIONS        ####################
+
+def reverse_complement(sequence: str) -> str:
+    """Returns the reverse complement of a DNA sequence (N stays N)."""
+    return sequence.translate(_COMPLEMENT)[::-1]
 
 def extract_kmers(sequence, quality, k,
                   min_kmer_quality=None) -> List[Tuple[int, str]]:
@@ -65,6 +70,17 @@ class Read:
         # mapped genome id -> 0-based reference position of the read's first
         # base. Negative when the read hangs off the start of the genome.
         self.positions = {}
+        # '+' if the read matched the reference as given, '-' if its reverse
+        # complement did, None while unmapped/filtered.
+        self.strand = None
+
+    def oriented(self, strand):
+        """Returns (sequence, quality) on the given strand. For '-' this is
+        the reverse complement with the qualities reversed, so index i of
+        both still describes the same base."""
+        if strand == '-':
+            return reverse_complement(self.sequence), self.quality[::-1]
+        return self.sequence, self.quality
 
     def get_mean_quality(self) -> float:
         """This method returns the mean (ave) quality value for the read."""
@@ -110,23 +126,20 @@ class Aligner:
         """This method enables coverage: EXTCOVERAGE, introduces a new attr."""
         self._coverage = Coverage(genome_lens, min_coverage)
 
-    def _apply_quality(self, read, k, min_read_quality,
-                        min_kmer_quality, max_genomes) -> [None, List]:
-        """This EXTQUALITY helper method applies quality filters (as given
-        by user) and returns the (offset, k-mer) pairs to be aligned."""
-        if min_read_quality and read.get_mean_quality() < min_read_quality:
-            self._quality_stats['filtered_quality_reads'] += 1
-            return None
-        kmers = extract_kmers(read.sequence, read.quality, k,
-                              min_kmer_quality) # get all filtered kmers
+    def _apply_quality(self, sequence, quality, k, min_kmer_quality,
+                       max_genomes) -> Tuple[List[Tuple[int, str]], int, int]:
+        """This EXTQUALITY helper method extracts the (offset, k-mer) pairs of
+        one read orientation, applying the k-mer filters given by the user.
+        Returns (k-mers, num low quality k-mers, num high-repeat k-mers)."""
+        kmers = extract_kmers(sequence, quality, k, min_kmer_quality)
+        low_quality = 0
         if min_kmer_quality: # keeping track of the filtered kmers
             # calcs the maximal number of kmers that can be made from Read:
-            max_kmer_num = len(read.sequence)-k+1
-            self._quality_stats['filtered_quality_kmers'] += \
-                (max_kmer_num - len(kmers))
+            max_kmer_num = max(0, len(sequence) - k + 1)
+            low_quality = max_kmer_num - len(kmers)
             # len(kmers) represents the num of kmers after filtering with MKQ
+        high_repeat = 0
         if max_genomes:
-            num_of_kmers = len(kmers)
             filtered_kmers = []
             for offset, kmer_seq in kmers:
                 ref_kmer = self._kmer_collection.get_kmer(kmer_seq)
@@ -134,12 +147,9 @@ class Aligner:
                     num_genomes = len(ref_kmer.get_genomes())
                     if num_genomes <= max_genomes: # filtering
                         filtered_kmers.append((offset, kmer_seq))
-            self._quality_stats['filtered_hr_kmers'] += \
-                (num_of_kmers - len(filtered_kmers)) # update filtering stats
-            if not filtered_kmers:
-                return None # and Read would be marked as unmapped
+            high_repeat = len(kmers) - len(filtered_kmers)
             kmers = filtered_kmers
-        return kmers
+        return kmers, low_quality, high_repeat
 
     def enable_vartracking(self, min_quality, min_coverage):
         """This method enables variant tracking: EXTVARTRACK,
@@ -162,23 +172,35 @@ class Aligner:
         """
         read.mapped_genomes = [] # reset, in case the read is aligned again
         read.positions = {}
+        read.strand = None
 
-        # EXTQUALITY
-        if any([min_read_quality, min_kmer_quality, max_genomes]):
-            kmers = self._apply_quality(read, k, min_read_quality,
-                                         min_kmer_quality, max_genomes)
-            if kmers is None: # Read filtered by EXTQUALITY
-                read.status = 'filtered'
-                return None # and continue to the next Read
-        else: # if no quality filtering is required
-            kmers = extract_kmers(read.sequence, read.quality, k)
+        # EXTQUALITY: read-level filter
+        if min_read_quality and read.get_mean_quality() < min_read_quality:
+            self._quality_stats['filtered_quality_reads'] += 1
+            read.status = 'filtered'
+            return None # and continue to the next Read
 
+        # Strand: count k-mer hits for the read as given ('+') and for its
+        # reverse complement ('-'). Keep the orientation with more specific
+        # hits, then more total hits; a full tie keeps '+'.
+        best = None
+        for strand in ('+', '-'):
+            sequence, quality = read.oriented(strand)
+            kmers, low_quality, high_repeat = self._apply_quality(
+                sequence, quality, k, min_kmer_quality, max_genomes)
+            counts = self._count_kmers_with_pos(kmers)
+            score = (sum(counts[0].values()), sum(counts[1].values()))
+            if best is None or score > best[0]:
+                best = (score, strand, sequence, quality, kmers,
+                        low_quality, high_repeat, counts)
+        (_, strand, sequence, quality, kmers, low_quality, high_repeat,
+         (specific_counts, mapped_genomes, offset_votes)) = best
+
+        self._quality_stats['filtered_quality_kmers'] += low_quality
+        self._quality_stats['filtered_hr_kmers'] += high_repeat
         if not kmers:
             read.status = 'filtered'
             return None
-
-        specific_counts, mapped_genomes, offset_votes =\
-            self._count_kmers_with_pos(kmers)  # helper func
 
         # Basic algorithm:
         # No specific k-mers -> unmapped
@@ -226,8 +248,8 @@ class Aligner:
             votes = offset_votes.get(genome_id)
             if genome is None or not votes:
                 continue
-            start_pos, mismatch_rate = self._choose_offset(read.sequence,
-                                                           genome, votes)
+            start_pos, mismatch_rate = self._choose_offset(sequence, genome,
+                                                           votes)
 
             # Filter using the CONSTANT
             if mismatch_rate <= MAX_MISMATCH_THRESHOLD:
@@ -235,10 +257,12 @@ class Aligner:
                 read.positions[genome_id] = start_pos
                 # Only call variants if verified and unique
                 if self._variant_tracker and read.status == 'unique':
-                    self._process_variants(read, genome_id, start_pos)
+                    self._process_variants(sequence, quality, genome_id,
+                                           start_pos)
 
         if verified_genomes:
             read.mapped_genomes = verified_genomes
+            read.strand = strand
         else:
             # If it failed the Hamming check, mark as unmapped
             read.status = 'unmapped'
@@ -362,12 +386,13 @@ class Aligner:
         # in case there are no quality statistics, return empty dict
 
     # EXTVARTRACK
-    def _process_variants(self, read, genome_id, start_pos):
+    def _process_variants(self, read_seq, read_quality, genome_id,
+                          start_pos):
         """This method performs variant detection after the alignment,
         by directly comparing the read to the reference at start_pos.
+        read_seq and read_quality are in reference orientation (reverse
+        complemented / reversed for minus-strand reads).
         Bases hanging off either end of the genome are ignored."""
-        read_seq = read.sequence
-        read_quality = read.quality
 
         genome = self._kmer_collection.get_genome(genome_id)
         if not genome:
