@@ -55,3 +55,88 @@ def test_read_quality():
     read = Read("test_id", "ACGTACGT", [20, 25, 30, 35, 20, 25, 30, 35])
     assert read.get_mean_quality() > 0
     assert read.get_kmer_quality(0, 4) > 0
+
+####################   OFFSETS AND OVERHANGS   ####################
+import random
+
+
+def _random_genome(length, k, seed=0):
+    """Random sequence whose k-mers all occur once (keeps tests exact)."""
+    rng = random.Random(seed)
+    while True:
+        seq = "".join(rng.choice("ACGT") for _ in range(length))
+        kmers = [seq[i:i + k] for i in range(length - k + 1)]
+        if len(set(kmers)) == len(kmers):
+            return seq
+
+
+def _aligner_for(genome_seq, k, identifier="g1"):
+    genome = Reference(identifier, genome_seq)
+    collection = KmerCollection()
+    genome.add_ref_kmers(k, collection)
+    return Aligner(collection)
+
+
+def test_offset_with_most_votes_wins():
+    k = 8
+    base = _random_genome(60, k, seed=1)
+    read_seq = base[30:50]
+    # Copy the read's first k-mer to position 5 as well: that k-mer now votes
+    # for start positions 5 and 30, every other k-mer votes only for 30.
+    genome_seq = base[:5] + read_seq[:k] + base[5 + k:]
+    assert genome_seq[30:50] == read_seq
+
+    aligner = _aligner_for(genome_seq, k)
+    read = Read("r", read_seq, [30] * len(read_seq))
+    aligner.align_read(read, k)
+    assert read.status == "unique"
+    assert read.positions == {"g1": 30}
+
+
+def test_offset_ignores_skipped_kmers():
+    """k-mers skipped because of an N must not shift the later offsets."""
+    k = 8
+    genome_seq = _random_genome(60, k, seed=2)
+    read_seq = genome_seq[30:50]
+    read_seq = read_seq[:3] + "N" + read_seq[4:]
+    aligner = _aligner_for(genome_seq, k)
+    read = Read("r", read_seq, [30] * len(read_seq))
+    aligner.align_read(read, k)
+    assert read.status == "unique"
+    assert read.positions == {"g1": 30}
+
+
+def test_read_overhanging_genome_start():
+    k = 8
+    genome_seq = _random_genome(60, k, seed=3)
+    read_seq = "TTTTT" + genome_seq[:15]  # 5 bases before the genome start
+    aligner = _aligner_for(genome_seq, k)
+    aligner.enable_coverage({"g1": len(genome_seq)})
+    aligner.enable_vartracking(min_quality=0, min_coverage=1)
+    read = Read("r", read_seq, [30] * len(read_seq))
+    aligner.align_read(read, k)
+
+    assert read.status == "unique"
+    assert read.positions == {"g1": -5}
+    unique_cov = aligner._coverage.get_coverage_stats()["Details"]["g1"][
+        "unique_cov"]
+    assert unique_cov == [1] * 15 + [0] * 45
+    assert aligner.dump_variants()["Variants"] == {}
+
+
+def test_read_overhanging_genome_end():
+    k = 8
+    genome_seq = _random_genome(60, k, seed=4)
+    read_seq = genome_seq[45:] + "TTTTT"  # 5 bases past the genome end
+    aligner = _aligner_for(genome_seq, k)
+    aligner.enable_coverage({"g1": len(genome_seq)})
+    aligner.enable_vartracking(min_quality=0, min_coverage=1)
+    read = Read("r", read_seq, [30] * len(read_seq))
+    aligner.align_read(read, k)
+
+    assert read.status == "unique"
+    assert read.positions == {"g1": 45}
+    unique_cov = aligner._coverage.get_coverage_stats()["Details"]["g1"][
+        "unique_cov"]
+    assert unique_cov == [0] * 45 + [1] * 15
+    assert aligner.dump_variants()["Variants"] == {}

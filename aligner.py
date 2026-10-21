@@ -1,12 +1,42 @@
 ####################         IMPORTS          ####################
-from collections import defaultdict
-from typing import List, Dict, Any
+from collections import Counter, defaultdict
+from typing import List, Dict, Any, Tuple
 from kmers import Kmer
 from extcoverage import Coverage
 from extvartrack import VariantTracker
 
 ####################         CONSTANTS        ####################
 MAX_MISMATCH_THRESHOLD = 0.1  # 10% maximum allowed error rate
+
+####################         FUNCTIONS        ####################
+
+def extract_kmers(sequence, quality, k,
+                  min_kmer_quality=None) -> List[Tuple[int, str]]:
+    """Returns (offset in sequence, k-mer) pairs. k-mers containing N are
+    skipped, and so are k-mers whose mean quality is below min_kmer_quality
+    (EXTQUALITY). The offset is kept so skipped k-mers don't shift the
+    positions of the ones after them."""
+    quality_ok = len(quality) == len(sequence)
+    kmers = []
+    for i in range(len(sequence) - k + 1):
+        k_mer = sequence[i:i + k]
+        if "N" in k_mer:
+            continue
+        if min_kmer_quality is not None:
+            # a read whose quality and sequence lengths differ has quality 0
+            kmer_quality = (sum(quality[i:i + k]) / k) if quality_ok else 0.0
+            if kmer_quality < min_kmer_quality:
+                continue
+        kmers.append((i, k_mer))
+    return kmers
+
+def aligned_span(offset, read_len, genome_len) -> Tuple[int, int]:
+    """Returns the [first, last) read indices that fall inside the genome
+    when the read starts at reference position offset. The offset may be
+    negative, and the read may run past the genome end."""
+    first = max(0, -offset)
+    last = min(read_len, genome_len - offset)
+    return first, max(first, last)
 
 ####################         CLASSES          ####################
 
@@ -32,6 +62,9 @@ class Read:
         # Status (unmapped/ambiguous/unique) would be decided upon execution:
         self.status = status
         self.mapped_genomes = [] # list of mapped Reference's identifiers
+        # mapped genome id -> 0-based reference position of the read's first
+        # base. Negative when the read hangs off the start of the genome.
+        self.positions = {}
 
     def get_mean_quality(self) -> float:
         """This method returns the mean (ave) quality value for the read."""
@@ -50,21 +83,9 @@ class Read:
     def get_kmers(self, k, min_kmer_quality=None) -> List[Kmer]:
         """This function extracts k-mers from this Read and returns a list.
         EXTQUALITY: kmers may be filtered by their quality scores."""
-        kmers = []
-        for i in range(len(self.sequence)-k+1):
-            k_mer = self.sequence[i:i+k]
-            if "N" in k_mer:
-                continue
-
-            # EXTQUALITY
-            if min_kmer_quality is not None:
-                kmer_quality = self.get_kmer_quality(i, k)
-                if kmer_quality < min_kmer_quality:
-                    continue
-
-            kmer_instance = Kmer(k_mer)
-            kmers.append(kmer_instance)
-        return kmers
+        return [Kmer(k_mer) for _, k_mer in
+                extract_kmers(self.sequence, self.quality, k,
+                              min_kmer_quality)]
 
 class Aligner:
     """
@@ -92,11 +113,12 @@ class Aligner:
     def _apply_quality(self, read, k, min_read_quality,
                         min_kmer_quality, max_genomes) -> [None, List]:
         """This EXTQUALITY helper method applies quality filters (as given
-        by user) and returns only the filters kmers to be aligned."""
+        by user) and returns the (offset, k-mer) pairs to be aligned."""
         if min_read_quality and read.get_mean_quality() < min_read_quality:
             self._quality_stats['filtered_quality_reads'] += 1
             return None
-        kmers = read.get_kmers(k, min_kmer_quality) # get all filtered kmers
+        kmers = extract_kmers(read.sequence, read.quality, k,
+                              min_kmer_quality) # get all filtered kmers
         if min_kmer_quality: # keeping track of the filtered kmers
             # calcs the maximal number of kmers that can be made from Read:
             max_kmer_num = len(read.sequence)-k+1
@@ -106,13 +128,12 @@ class Aligner:
         if max_genomes:
             num_of_kmers = len(kmers)
             filtered_kmers = []
-            for kmer in kmers:
-                kmer_seq = kmer.sequence
+            for offset, kmer_seq in kmers:
                 ref_kmer = self._kmer_collection.get_kmer(kmer_seq)
                 if ref_kmer is not None:
                     num_genomes = len(ref_kmer.get_genomes())
                     if num_genomes <= max_genomes: # filtering
-                        filtered_kmers.append(kmer) # add to filtered kmers
+                        filtered_kmers.append((offset, kmer_seq))
             self._quality_stats['filtered_hr_kmers'] += \
                 (num_of_kmers - len(filtered_kmers)) # update filtering stats
             if not filtered_kmers:
@@ -139,6 +160,8 @@ class Aligner:
         :param max_genomes: filter k-mers from too many genomes (EXTQUALITY).
         :return: should set the status of the Read as an attr and return None.
         """
+        read.mapped_genomes = [] # reset, in case the read is aligned again
+        read.positions = {}
 
         # EXTQUALITY
         if any([min_read_quality, min_kmer_quality, max_genomes]):
@@ -148,14 +171,14 @@ class Aligner:
                 read.status = 'filtered'
                 return None # and continue to the next Read
         else: # if no quality filtering is required
-            kmers = read.get_kmers(k)
+            kmers = extract_kmers(read.sequence, read.quality, k)
 
         if not kmers:
             read.status = 'filtered'
             return None
 
-        specific_counts, mapped_genomes, genome_positions =\
-            self._count_kmers_with_pos(kmers, k)  # helper func
+        specific_counts, mapped_genomes, offset_votes =\
+            self._count_kmers_with_pos(kmers)  # helper func
 
         # Basic algorithm:
         # No specific k-mers -> unmapped
@@ -199,20 +222,20 @@ class Aligner:
 
         verified_genomes = []
         for genome_id in read.mapped_genomes:
-            positions = genome_positions.get(genome_id, set())
-            if not positions:
+            genome = self._kmer_collection.get_genome(genome_id)
+            votes = offset_votes.get(genome_id)
+            if genome is None or not votes:
                 continue
-            start_pos = list(positions)[0]
-
-            # calculate mismatches (Hamming Distance)
-            mismatches = self._calculate_mismatches(read, genome_id, start_pos)
+            start_pos, mismatch_rate = self._choose_offset(read.sequence,
+                                                           genome, votes)
 
             # Filter using the CONSTANT
-            if mismatches / len(read.sequence) <= MAX_MISMATCH_THRESHOLD:
+            if mismatch_rate <= MAX_MISMATCH_THRESHOLD:
                 verified_genomes.append(genome_id)
+                read.positions[genome_id] = start_pos
                 # Only call variants if verified and unique
                 if self._variant_tracker and read.status == 'unique':
-                    self._process_variants(read, genome_id, {start_pos})
+                    self._process_variants(read, genome_id, start_pos)
 
         if verified_genomes:
             read.mapped_genomes = verified_genomes
@@ -220,6 +243,7 @@ class Aligner:
             # If it failed the Hamming check, mark as unmapped
             read.status = 'unmapped'
             read.mapped_genomes = []
+            read.positions = {}
             self._accumulate_status('unmapped', [])
             return
 
@@ -231,25 +255,28 @@ class Aligner:
             # add the read coverage attr to the Coverage inst (of this Aligner)
             if read.status != 'unmapped': # either unique or ambiguous
                 for gen_id in read.mapped_genomes:
-                    full_positions = set()
-                    for start_pos in genome_positions[gen_id]:
-                        for i in range(k):
-                            full_positions.add(start_pos + i)
+                    # every reference base the read covers at its offset,
+                    # clipped to the genome
+                    start_pos = read.positions[gen_id]
+                    genome = self._kmer_collection.get_genome(gen_id)
+                    first, last = aligned_span(start_pos, len(read.sequence),
+                                               genome.total_bases)
+                    self._coverage.add_read_coverage(
+                        read, gen_id,
+                        range(start_pos + first, start_pos + last))
 
-                    self._coverage.add_read_coverage(read, gen_id,
-                                                     full_positions)
-
-    def _count_kmers_with_pos(self, kmers: List[Kmer], k):
-        """This method counts specific and total kmers for every genome,
-        and tracks positions of any matched k-mers here (genome_positions)."""
+    def _count_kmers_with_pos(self, kmers: List[Tuple[int, str]]):
+        """This method counts specific and total kmers for every genome.
+        It also counts, per genome, how many k-mer hits vote for each
+        read start position (reference pos of the k-mer minus its offset
+        in the read)."""
 
         mapped_genomes = {}  # For total k-mer counts
         specific_counts = {}  # For specific k-mer counts
-        genome_positions = defaultdict(set)  # default dict with an empty set
+        offset_votes = defaultdict(Counter)  # genome id -> {offset: votes}
 
-        # FIX: Enumerate to get 'i' (the offset of the k-mer in the read)
-        for i, kmer in enumerate(kmers):
-            ref_kmer = self._kmer_collection.get_kmer(kmer.sequence)
+        for i, kmer_seq in kmers:
+            ref_kmer = self._kmer_collection.get_kmer(kmer_seq)
             if not ref_kmer:
                 continue
 
@@ -269,9 +296,23 @@ class Aligner:
                 mapped_genomes[genome_id] += 1
 
                 for pos in ref_kmer.get_positions(genome):
-                    genome_positions[genome_id].add(pos - i)
+                    offset_votes[genome_id][pos - i] += 1
 
-        return specific_counts, mapped_genomes, genome_positions
+        return specific_counts, mapped_genomes, offset_votes
+
+    def _choose_offset(self, sequence, genome, votes) -> Tuple[int, float]:
+        """Picks the read start position with the most k-mer votes. Ties are
+        broken by the lower mismatch rate, then by the smaller position.
+        Returns (position, mismatch rate)."""
+        top_votes = max(votes.values())
+        best = None
+        for offset in sorted(o for o, n in votes.items() if n == top_votes):
+            mismatches, overlap = self._calculate_mismatches(sequence, genome,
+                                                             offset)
+            rate = mismatches / overlap if overlap else 1.0
+            if best is None or rate < best[1]:
+                best = (offset, rate)
+        return best
 
     def _accumulate_status(self, status, mapped_genomes: List[str]) -> None:
         """
@@ -321,24 +362,22 @@ class Aligner:
         # in case there are no quality statistics, return empty dict
 
     # EXTVARTRACK
-    def _process_variants(self, read, genome_id, positions):
+    def _process_variants(self, read, genome_id, start_pos):
         """This method performs variant detection after the alignment,
-        by directly comparing the sequences."""
+        by directly comparing the read to the reference at start_pos.
+        Bases hanging off either end of the genome are ignored."""
         read_seq = read.sequence
         read_quality = read.quality
 
         genome = self._kmer_collection.get_genome(genome_id)
-
-        if not genome or not positions:
+        if not genome:
             return
 
-        start_pos = min(positions)
-        end_pos = min(start_pos + len(read_seq), genome.total_bases)
-        ref_seq = genome.seq[start_pos:end_pos] # get ref sequence
-
-        for i, (read_base, ref_base) in enumerate(zip(read_seq[:
-        len(ref_seq)], ref_seq)):
-            # iterating through bases simultaneously of ref and read seqs.
+        first, last = aligned_span(start_pos, len(read_seq),
+                                   genome.total_bases)
+        for i in range(first, last):
+            read_base = read_seq[i]
+            ref_base = genome.seq[start_pos + i]
             if read_base != ref_base:  # diff between ref and read - found var
                 pos = start_pos + i
                 quality = read_quality[i]
@@ -355,13 +394,15 @@ class Aligner:
             return
         return self._variant_tracker.dump_variants(selected_genomes)
 
-    def _calculate_mismatches(self, read, genome_id, start_pos) -> int:
-        """Helper to calculate Hamming Distance."""
-        genome = self._kmer_collection.get_genome(genome_id)
-        if not genome:
-            return len(read.sequence)  # max error if genome not found
-
-        end_pos = min(start_pos + len(read.sequence), genome.total_bases)
-        ref_seq = genome.seq[start_pos:end_pos]
-        read_seq = read.sequence[:len(ref_seq)]
-        return sum(1 for r, g in zip(read_seq, ref_seq) if r != g)
+    @staticmethod
+    def _calculate_mismatches(sequence, genome,
+                              start_pos) -> Tuple[int, int]:
+        """Helper to calculate Hamming Distance between the read and the
+        genome at start_pos, over the bases that overlap the genome.
+        Returns (mismatches, number of overlapping bases)."""
+        first, last = aligned_span(start_pos, len(sequence),
+                                   genome.total_bases)
+        ref_seq = genome.seq[start_pos + first:start_pos + last]
+        mismatches = sum(1 for r, g in zip(sequence[first:last], ref_seq)
+                         if r != g)
+        return mismatches, last - first
