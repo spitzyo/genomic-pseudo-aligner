@@ -53,13 +53,6 @@ class VariantTracker:
         self._min_quality = min_quality if min_quality is not None else 20.0
         self._min_coverage = min_cov if min_cov is not None else 10
         self._variants = {} # genome_id -> {position -> Variant instance}
-        self._stats = {}    # genome_id -> statistics_dict
-
-    def _init_stats(self, genome_id: str):
-        """Initializes the statistics dictionary for a specific genome."""
-        if genome_id not in self._stats:
-            self._stats[genome_id] = {'total_variants': 0,
-                                       'filtered_variants': 0}
 
     def add_direct_variant(self, genome_id, position, ref_base, alt_base,
                            quality) -> None:
@@ -69,7 +62,6 @@ class VariantTracker:
 
         if genome_id not in self._variants:
             self._variants[genome_id] = {}
-            self._init_stats(genome_id)
 
         if position not in self._variants[genome_id]:
             self._variants[genome_id][position] = Variant(position, ref_base,
@@ -77,24 +69,31 @@ class VariantTracker:
         self._variants[genome_id][position].update_variant_counts()
 
     def get_variants(self, genome_id) -> Dict[int, Variant]:
-        """Returns variants that meet the minimum coverage threshold."""
+        """Returns variants that meet the minimum coverage threshold.
+        Read-only: calling it any number of times gives the same result."""
         if genome_id not in self._variants:
             return {}
 
         filtered_variants = {}
         for pos, variant in self._variants[genome_id].items():
-            total_coverage = variant.coverage
-            if total_coverage >= self._min_coverage:
+            if variant.coverage >= self._min_coverage:
                 filtered_variants[pos] = variant
-                self._stats[genome_id]['total_variants'] += 1
-            else:
-                self._stats[genome_id]['total_variants'] += 1
         return filtered_variants
+
+    def get_stats(self, genome_id) -> Dict[str, int]:
+        """Counts this genome's candidate variants: total_variants, how many
+        pass the filters (reported_variants) and how many fail them
+        (filtered_variants). Computed from scratch on every call."""
+        total = len(self._variants.get(genome_id, {}))
+        reported = len(self.get_variants(genome_id))
+        return {'total_variants': total,
+                'reported_variants': reported,
+                'filtered_variants': total - reported}
 
     def dump_variants(self, selected_genomes=None) -> Dict:
         """Formats the variant data and statistics for JSON output."""
 
-        output = {"Variants": {}, "Statistics": self._stats}
+        output = {"Variants": {}, "Statistics": {}}
         if selected_genomes is None:
             genomes = list(self._variants.keys())
         else:
@@ -103,6 +102,7 @@ class VariantTracker:
         for genome_id in genomes:
             if genome_id not in self._variants:
                 continue # skip if this genome has no variants
+            output['Statistics'][genome_id] = self.get_stats(genome_id)
             variants = self.get_variants(genome_id)
             if not variants:
                 continue

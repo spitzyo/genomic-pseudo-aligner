@@ -41,3 +41,18 @@ def test_coverage_filter():
     variantracker.add_direct_variant("sample1", 7, "T", "C", 40)
     variantracker.add_direct_variant("sample1", 7, "T", "C", 40)
     assert len(variantracker.get_variants("sample1")) == 1 # only one should be
+
+def test_variant_stats_count_filtered_and_are_idempotent():
+    tracker = VariantTracker(min_cov=2)
+    tracker.add_direct_variant("g1", 5, "A", "C", 30)  # coverage 1: filtered
+    tracker.add_direct_variant("g1", 9, "G", "T", 30)
+    tracker.add_direct_variant("g1", 9, "G", "T", 30)  # coverage 2: reported
+
+    expected = {"g1": {"total_variants": 2, "reported_variants": 1,
+                       "filtered_variants": 1}}
+    tracker.get_variants("g1")  # must not change the stats
+    first = tracker.dump_variants()
+    second = tracker.dump_variants()
+    assert first["Statistics"] == expected
+    assert second["Statistics"] == expected
+    assert first == second
