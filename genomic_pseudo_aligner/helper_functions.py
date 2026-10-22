@@ -85,9 +85,11 @@ def open_gz_file(filename: str, mode='r'):
 def import_fasta(filename) -> List[Reference]:
     """This function imports sequences from a FASTA-formatted file.
     This format is usually used for bacterial genomes.
-    Records with an empty header, no sequence, or characters other than
-    A, C, G, T, N are skipped with a warning on stderr. Raises AppErr if
-    the file isn't FASTA or has no usable record."""
+    Sequences are uppercased, so soft-masked (lowercase) bases from
+    UCSC/Ensembl references are accepted. Records with an empty header, no
+    sequence, or characters other than A, C, G, T, N (in either case) are
+    skipped with a warning on stderr. Raises AppErr if the file isn't
+    FASTA or has no usable record."""
     if not filename.endswith(('.fa', '.fasta', '.fa.gz', '.fasta.gz')):
         raise UsageErr(f"{filename} is not a FASTA file (expected a name "
                        f"ending in .fa, .fasta, .fa.gz or .fasta.gz)")
@@ -106,6 +108,7 @@ def import_fasta(filename) -> List[Reference]:
                 raise AppErr(f"{filename} is not in FASTA format: line "
                              f"{line_no} comes before the first '>' header")
             else:
+                line = line.upper() # soft-masked bases are lowercase
                 record = records[-1]
                 if record[2] is None and not set(line) <= NUCLEO_LETTERS:
                     record[2] = line_no
@@ -118,7 +121,7 @@ def import_fasta(filename) -> List[Reference]:
                  f"empty '>' header")
         elif bad_line is not None:
             warn(f"{filename}: skipped '{identifier}': line {bad_line} has "
-                 f"characters other than A, C, G, T, N")
+                 f"characters other than A, C, G, T, N (in either case)")
         elif not lines:
             warn(f"{filename}: skipped '{identifier}': no sequence")
         else:
@@ -171,6 +174,7 @@ def load_kdb_file(filename: str) -> KmerCollection:
 def import_fastq(filename) -> List[Read]:
     """This function imports sequences from a FASTQ-formatted file.
     This format is usually used for NGS-sequenced genomes.
+    Read sequences are uppercased, so mixed-case reads are accepted.
     Malformed records are skipped, with one warning on stderr giving the
     count and the first problem. Raises AppErr if no read is usable."""
     if not filename.endswith(('.fq', '.fastq', '.fq.gz', '.fastq.gz')):
@@ -194,6 +198,7 @@ def import_fastq(filename) -> List[Read]:
             sequence, plus, quality = (f.readline().strip()
                                        for _ in range(3))
             line_no += 3
+            sequence = sequence.upper() # accept lowercase bases
 
             problem = None
             if not header.startswith("@"):
@@ -204,7 +209,7 @@ def import_fastq(filename) -> List[Read]:
                 problem = "the sequence is empty"
             elif not set(sequence) <= NUCLEO_LETTERS:
                 problem = ("the sequence has characters other than "
-                           "A, C, G, T, N")
+                           "A, C, G, T, N (in either case)")
             elif len(quality) != len(sequence):
                 problem = "the quality and sequence lengths differ"
             if problem:
