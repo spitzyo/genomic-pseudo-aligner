@@ -45,6 +45,23 @@ def test_import_fasta_invalid(tmp_path):
     assert len(references) == 1 # assure only one valid genome was imported
     assert references[0].identifier == "Valid"
 
+def test_import_fasta_soft_masked(tmp_path):
+    """Soft-masked (lowercase) bases, as in UCSC/Ensembl references, are
+    accepted and uppercased."""
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">chr1\nACGTacgtNNnn\nttagGCAT\n>chr2\nacgt\n")
+    references = import_fasta(str(fasta_file))
+    assert [r.identifier for r in references] == ["chr1", "chr2"]
+    assert references[0].seq == "ACGTACGTNNNNTTAGGCAT"
+    assert references[1].seq == "ACGT"
+
+def test_import_fasta_lowercase_invalid_still_rejected(tmp_path, capsys):
+    fasta_file = tmp_path / "test.fa"
+    fasta_file.write_text(">Valid\nacgt\n>Invalid\nacgt\nacxt\n")
+    references = import_fasta(str(fasta_file))
+    assert [r.identifier for r in references] == ["Valid"]
+    assert "skipped 'Invalid': line 5" in capsys.readouterr().err
+
 
 def test_save_load_kdb(tmp_path):
     kmer_collection = KmerCollection()
@@ -72,6 +89,18 @@ def test_import_fastq(tmp_path):
     assert reads[0].sequence == "ACGT"
     assert reads[1].identifier == "Read2"
     assert reads[1].sequence == "TGCA"
+
+def test_import_fastq_mixed_case(tmp_path):
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Read1\nacgtN\n+\nIIIII\n@Read2\nTgCan\n+\nIIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert [r.sequence for r in reads] == ["ACGTN", "TGCAN"]
+
+def test_import_fastq_lowercase_invalid_still_rejected(tmp_path):
+    fastq_file = tmp_path / "test.fq"
+    fastq_file.write_text("@Valid\nacgt\n+\nIIII\n@Invalid\nacxt\n+\nIIII\n")
+    reads = import_fastq(str(fastq_file))
+    assert [r.identifier for r in reads] == ["Valid"]
 
 def test_import_fastq_quality(tmp_path):
     fastq_file = tmp_path / "test.fq"

@@ -236,6 +236,24 @@ def test_fasta_bad_records_are_skipped_with_warnings(files, capsys):
     assert "skipped 'empty': no sequence" in err
 
 
+def test_soft_masked_fasta_and_mixed_case_reads_align_like_uppercase(
+        files, capsys):
+    """A soft-masked reference and mixed-case reads give the same result
+    as the all-uppercase inputs, with no warnings."""
+    masked = GENOME[:10].lower() + GENOME[10:30] + GENOME[30:].lower()
+    (files / "masked.fa").write_text(f">g1\n{masked}\n")
+    mixed = READ[:5].lower() + READ[5:12] + READ[12:].lower()
+    (files / "mixed.fq").write_text(f"@r1\n{mixed}\n+\n{'I' * len(READ)}\n")
+
+    expected = _dumpalign(capsys, files, files / "reads.fq")
+    status, out, err = run_cli(capsys, "-t", "dumpalign",
+                               "-g", files / "masked.fa", "-k", 5,
+                               "--reads", files / "mixed.fq")
+    assert (status, err) == (0, "")
+    assert json.loads(out) == json.loads(expected[1])
+    assert json.loads(out)["Statistics"]["unique_mapped_reads"] == 1
+
+
 ####################        BAD FASTQ        ####################
 
 def _dumpalign(capsys, files, reads):
