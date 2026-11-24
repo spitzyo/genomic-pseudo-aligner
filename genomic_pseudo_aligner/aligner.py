@@ -143,11 +143,13 @@ class Aligner:
             filtered_kmers = []
             for offset, kmer_seq in kmers:
                 ref_kmer = self._kmer_collection.get_kmer(kmer_seq)
-                if ref_kmer is not None:
-                    num_genomes = len(ref_kmer.get_genomes())
-                    if num_genomes <= max_genomes: # filtering
-                        filtered_kmers.append((offset, kmer_seq))
-            high_repeat = len(kmers) - len(filtered_kmers)
+                if (ref_kmer is not None and
+                        len(ref_kmer.get_genomes()) > max_genomes):
+                    high_repeat += 1  # in too many genomes -> filter it out
+                    continue
+                # k-mers absent from the reference are kept: they aren't
+                # repeats (e.g. k-mers spanning a SNP) and are ignored anyway
+                filtered_kmers.append((offset, kmer_seq))
             kmers = filtered_kmers
         return kmers, low_quality, high_repeat
 

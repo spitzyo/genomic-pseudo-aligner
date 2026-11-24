@@ -197,3 +197,36 @@ def test_minus_strand_variant_reported_in_reference_orientation():
     assert list(variants) == [variant_pos]
     assert variants[variant_pos].get_bases() == (ref_base, alt_base)
     assert variants[variant_pos].quality_score == 35
+
+
+####################     EXTQUALITY: --max-genomes     ####################
+
+def test_max_genomes_keeps_read_with_snp():
+    """k-mers spanning a SNP are absent from the reference: they are not
+    high-repeat k-mers and must not be counted as filtered."""
+    k = 10
+    genome_seq = _random_genome(300, k, seed=11)
+    aligner = _aligner_for(genome_seq, k)
+    read_seq = list(genome_seq[100:150])
+    read_seq[25] = "A" if read_seq[25] != "A" else "C"
+    read = Read("r1", "".join(read_seq), [40] * 50)
+    aligner.align_read(read, k, max_genomes=1)
+    assert read.status == "unique"
+    assert aligner.get_quality_stats()["filtered_hr_kmers"] == 0
+
+
+def test_max_genomes_counts_only_kmers_in_too_many_genomes():
+    k = 10
+    shared = _random_genome(300, k, seed=12)
+    genome1 = Reference("g1", shared + _random_genome(300, k, seed=13))
+    genome2 = Reference("g2", shared + _random_genome(300, k, seed=14))
+    collection = KmerCollection()
+    genome1.add_ref_kmers(k, collection)
+    genome2.add_ref_kmers(k, collection)
+    aligner = Aligner(collection)
+    read = Read("r1", genome1.seq[280:330], [40] * 50)  # first 20 bases shared
+    aligner.align_read(read, k, max_genomes=1)
+    # k-mers lying fully inside the 20 shared bases: 20 - 10 + 1 = 11
+    assert aligner.get_quality_stats()["filtered_hr_kmers"] == 11
+    assert read.status == "unique"
+    assert read.mapped_genomes == ["g1"]
